@@ -1,20 +1,19 @@
 use hpke::Kem as KemTrait;
-
 use crate::Kem;
 
 pub enum DataType {
-    EncappedKey(<Kem as KemTrait>::EncappedKey),
+    EncappedKey(Vec<u8>),
     Ciphertext(Vec<u8>),
-    AssociatedData,
-    TagBytes,
+    AssociatedData(Vec<u8>),
+    TagBytes(Vec<u8>),
 }
 
 pub fn data_type_int(data_ype: DataType) -> u8 {
     match data_ype {
         DataType::EncappedKey(_) => 1,
         DataType::Ciphertext(_) => 2,
-        DataType::AssociatedData => 3,
-        DataType::TagBytes => 4,
+        DataType::AssociatedData(_) => 3,
+        DataType::TagBytes(_) => 4,
     }
 }
 

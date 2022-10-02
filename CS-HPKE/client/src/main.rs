@@ -23,6 +23,7 @@ type Kem = X25519HkdfSha256;
 type Aead = ChaCha20Poly1305;
 type Kdf = HkdfSha384;
 
+
 fn client_encrypt_msg(
     msg: &[u8], 
     associated_data: &[u8], 
@@ -31,18 +32,25 @@ fn client_encrypt_msg(
     let mut csprng = StdRng::from_entropy();
 
     let (encapped_key, mut sender_ctx) =
-        hpke::setup_sender::<Aead, Kdf, Kem, _>(&OpModeS::Base, server_pk, INFO_STR, &mut csprng)
-            .expect("invalid server pubkey!");
+        hpke::setup_sender::<Aead, Kdf, Kem, _>(
+            &OpModeS::Base,
+            server_pk,
+            INFO_STR, 
+            &mut csprng
+        ).expect("invalid server pubkey!");
 
     let mut msg_copy = msg.to_vec();
-    let tag = sender_ctx
-        .seal_in_place_detached(&mut msg_copy, associated_data)
-        .expect("encryption failed!");
+    let tag = 
+        sender_ctx.seal_in_place_detached(
+            &mut msg_copy,
+            associated_data
+        ).expect("encryption failed!");
 
     let ciphertext = msg_copy;
 
     (encapped_key, ciphertext, tag)
 }
+
 
 fn send_packet(
     stream:&mut TcpStream, 
@@ -50,13 +58,14 @@ fn send_packet(
     received_mex: &mut [u8], 
     what: String
 ) {
+    // Incapsula le informaazioni in un pacchetto
     stream.write(pack).unwrap();
     println!("{} inviata", what);
 
     match stream.read(received_mex) {
         Ok(_) => {
             if received_mex == [0] {
-                println!("il server ha ricevuto {}", what)
+                println!("Il server ha ricevuto {}", what)
             }
         },
         Err(e) => {
@@ -66,11 +75,11 @@ fn send_packet(
     }
 }
 
+
 fn main() {
     let remote: SocketAddr = "127.0.0.1:8888".parse().unwrap();
 
     let mut server_pubkey_bytes = [0 as u8; 32];
-    // let mut res_mex = [0 as u8];
 
     match TcpStream::connect(remote) {
         Ok(mut stream) => {
@@ -96,6 +105,7 @@ fn main() {
         },
     }
 
+    // Recupera la serve public key
     let server_pubkey = 
         <Kem as KemTrait>::PublicKey::from_bytes(&mut server_pubkey_bytes)
             .expect("could not deserialize the encapsulated pubkey!");
@@ -122,7 +132,8 @@ fn main() {
         // EncappedKey, Ciphertext(Vec<u8>), AssociatedData, TagBytes
 
         // => EncappedKey
-        let ek_clone = encapped_key.clone();
+        let ek = encapped_key.to_bytes().to_vec();
+        let ek_clone = ek.clone();
         let ek_data_type = DataType::EncappedKey(ek_clone);
         let ek_id = data_type_int(ek_data_type);        
         let ek_data_packet = DataPacket {
@@ -144,28 +155,63 @@ fn main() {
         let ct_data_packet_byte = tmp.as_slice();
         
         // => AssociatedData
+        let ad = associated_data.to_vec();
+        let ad_data_type = DataType::AssociatedData(ad);
+        let ad_id = data_type_int(ad_data_type);
+        let ad_data_packet = DataPacket {
+            header: ad_id,
+            payload: associated_data.to_vec()
+        }; 
+        let tmp = ad_data_packet.group();
+        let ad_data_packet_byte= tmp.as_slice();
+
         // => TagBytes
-        
+        let tb = tag.to_bytes().to_vec();
+        let tb_clone = tb.clone();
+        let tb_data_type = DataType::TagBytes(tb_clone);
+        let tb_id = data_type_int(tb_data_type);
+        let tb_data_packet = DataPacket {
+            header: tb_id,
+            payload: tb
+        };
+        let tmp = tb_data_packet.group();
+        let tb_data_packet_byte = tmp.as_slice();
+
 
         // Invio dei pacchetti
         match TcpStream::connect(remote) {
             Ok(mut stream) => {
                 let mut received = [0 as u8; 1];
 
-                println!("Invio pacchetti ek e ct al server");
+                println!("Invio EncappedKey, Ciphertext al server");
 
+                // Invio di EncappedKey
                 send_packet(
                     &mut stream,
                     ek_data_packet_byte,
                     &mut received, 
-                    String::from("ek")
+                    String::from("EncappedKey")
                 );
-
+                // Invio di Ciphertext
                 send_packet(
                     &mut stream,
                     ct_data_packet_byte,
                     &mut received, 
-                    String::from("ek")
+                    String::from("Ciphertext")
+                );
+                // Invio di AssociatedData                
+                send_packet(
+                    &mut stream,
+                    ad_data_packet_byte,
+                    &mut received, 
+                    String::from("AssociatedData")
+                );
+                // Invio di Tag                
+                send_packet(
+                    &mut stream,
+                    tb_data_packet_byte,
+                    &mut received, 
+                    String::from("Tag")
                 );
             },
             Err(e) => {

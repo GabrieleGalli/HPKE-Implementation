@@ -1,0 +1,29 @@
+stream.write(&ek_data_packet_byte).unwrap();
+println!("ek inviata");
+
+match stream.read(&mut received) {
+    Ok(_) => {
+        if received == [0] {
+            println!("il server ha ricevuto la ek")
+        }
+    },
+    Err(e) => {
+        println!("Fallimento nel ricevere dati: {}", e);
+        return;
+    }
+}
+
+stream.write(&ct_data_packet_byte).unwrap();
+println!("ct inviato");
+
+match stream.read(&mut received) {
+    Ok(_) => {
+        if received == [0] {
+            println!("il server ha ricevuto la ek")
+        }
+    },
+    Err(e) => {
+        println!("Fallimento nel ricevere dati: {}", e);
+        return;
+    }
+}

@@ -27,3 +27,30 @@ match stream.read(&mut received) {
         return;
     }
 }
+
+
+// RICEZIONE DI PACCHETTI DAL SERVER
+
+println!("Arrivata EncappedKey");
+display_data(&data);
+stream.write(mex)?;
+fill_vec(&mut ek, &data);
+display_vec(&ek)
+
+println!("Arrivato Ciphertext");
+display_data(&data);
+stream.write(mex)?;
+fill_vec(&mut ct, &data);
+display_vec(&ct)
+
+println!("Arrivato AssociatedData");
+display_data(&data);            
+stream.write(mex)?;
+fill_vec(&mut ad, &data);
+display_vec(&ad)
+
+println!("Arrivato Tag");
+display_data(&data);
+stream.write(mex)?;
+fill_vec(&mut tb, &data);
+display_vec(&tb)

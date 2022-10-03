@@ -12,6 +12,8 @@ use hpke::{
 
 use rand::{rngs::StdRng, SeedableRng};
 
+mod data_packets_manager;
+
 const INFO_STR: &[u8] = b"example session";
 
 // Algorithms
@@ -60,17 +62,16 @@ fn server_decrypt_msg(
     plaintext
 }
 
-
-fn ready(ek: &[u8], ct: &mut [u8], ad: &mut [u8], tb: &mut [u8]) -> bool {
-    if ek != [0 as u8; ek.len()] 
-    && ct != [0 as u8; ct.len()]
-    && ad != [0 as u8; ad.len()]
-    && tb != [0 as u8; tb.len()] {
+// Controlla che siano stati riempiti i vettori che servono per decriptare il messaggio
+fn ready(ek: &Vec<u8>, ct: &Vec<u8>, ad: &Vec<u8>, tb: &Vec<u8>) -> bool {
+    if !ek.is_empty()
+    && !ct.is_empty()
+    && !ad.is_empty()
+    && !tb.is_empty() {
         return true;
     }
     return false;
 }
-
 
 // Initializes the server with a fresh keypair
 fn server_init() -> (<Kem as KemTrait>::PrivateKey, <Kem as KemTrait>::PublicKey) {
@@ -78,68 +79,98 @@ fn server_init() -> (<Kem as KemTrait>::PrivateKey, <Kem as KemTrait>::PublicKey
     Kem::gen_keypair(&mut csprng)
 }
 
+// Gestisce l'arrivo del ppacchetto memorizzandolo nel corretto vettore
+fn handle_data(mut stream: &TcpStream, vec: &mut Vec<u8>, buf: &[u8], mex: &[u8]) -> Result<(), Error> {
+    let id = buf[0];
+    let dtype = data_packets_manager::int_data_type_display(id);
+    println!("Arrivato {}", dtype);
+    display_data(&buf);
+    let bytes_written = stream.write(mex)?;
+    if bytes_written == 0 {return Ok(());}
+    fill_vec(vec, &buf);
+    Ok(display_vec(&vec))
+}
 
-fn handle_client(
-    mut stream: &TcpStream, 
-    pubkey: &[u8], 
-    privkey: &[u8], 
-    mex: &[u8]
-) -> Result<(), Error> {
-    println!("Incoming connection from: {}", stream.peer_addr()?);
+// Rimpie il vettore con i dati dentro al buffer
+fn fill_vec(vec: &mut Vec<u8>, buf: &[u8]) {
+    let mut ii:usize = 2;
+    let pack_len = buf[1];
 
-    let ek: &[u8];
-    let ct: &[u8];
-    let ad: &[u8];
-    let tb: &[u8];
+    loop {
+        while ii <= ((pack_len + 1)).into() {
+            vec.push(buf[ii]);
+            ii += 1;
+        }
+        break;
+    }
+}
 
+// Printa un vettore
+fn display_vec(vec: &Vec<u8>) {
+    print!("vettore: ");
+    for i in vec { print!("{} ", i); }
+    print!("\n\n");
+}
+
+// Printa un buffer
+fn display_data(buf: &[u8]) {
+    print!("data: ");
+    for i in buf { print!("{} ", i); }
+    print!("\n");
+}
+
+// Gestisce la comunicazione con un client
+fn handle_client(mut stream: &TcpStream, pubkey: &[u8], privkey: &[u8], mex: &[u8]) -> Result<(), Error> {
+    println!("Incoming connection from: {}\n", stream.peer_addr()?);
+
+    let mut ek:Vec<u8> = vec![]; 
+    let mut ct:Vec<u8> = vec![]; 
+    let mut ad:Vec<u8> = vec![];  
+    let mut tb:Vec<u8> = vec![]; 
+
+    // IL BUFFER DATA PUÒ ESSERE MOLTO PIÙ GRANDE
     let mut data = [0 as u8; 100]; 
 
     loop {
         let bytes_read = stream.read(&mut data)?;
+
         if bytes_read == 0 {return Ok(());}
 
         // Richiesta della chiave pubblica => 0
         if data[0] == 0 {
             stream.write(pubkey)?;
-            println!("Chiave pubblica server inviata");
+            println!("Chiave pubblica server inviata\n");
         }
+        // Memorizzazione dei pacchetti arrivati
         // Arrivo della Encapped Key => 1 
         else if data[0] == 1 {
-            println!("Arrivata EncappedKey");
-            stream.write(mex)?;
-            let len = data.len();
-            ek = &data[1..len];
+            handle_data(stream, &mut ek, &data, mex)?;
         }
         // Arrivo del CipherText => 2 
         else if data[0] == 2 {
-            println!("Arrivato Ciphertext");
-            stream.write(mex)?;
-            let len = data.len();
-            ct = &data[1..len];
+            handle_data(stream, &mut ct, &data, mex)?;
         }
         // Arrivo di AssociatedData => 3
         else if data[0] == 3 {
-            println!("Arrivato AssociatedData");
-            stream.write(mex)?;
-            let len = data.len();
-            ad = &data[1..len];
+            handle_data(stream, &mut ad, &data, mex)?;
         }
         // Arrivo di Tag => 4 
         else if data[0] == 4 {
-            println!("Arrivato Tag");
-            stream.write(mex)?;
-            let len = data.len();
-            tb = &data[1..len];
+            handle_data(stream, &mut tb, &data, mex)?;
         }
 
         if ready(&ek, &mut ct, &mut ad, &mut tb) {
+            // Decripta il messaggio
             let decrypted_msg = server_decrypt_msg(
                 privkey,
-                ek,
-                ct,
-                ad,
-                tb
+                ek.as_slice(),
+                ct.as_slice(),
+                ad.as_slice(),
+                tb.as_slice()
             );
+
+            /* Il messaggio ricevuto viene mandato indietro al client 
+            per verificare che sia corretto */
             stream.write(&decrypted_msg)?;
             println!("Ho riscritto al client");
         }

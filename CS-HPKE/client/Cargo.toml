@@ -8,3 +8,5 @@ edition = "2021"
 [dependencies]
 hpke = "0.9.0"
 rand = "0.8.3"
+strum = "0.24.1"
+strum_macros = "0.24"

@@ -15,4 +15,4 @@ Steps of the project
 
 [03/10]: exchange of needed data to encrypt and decrypt the message (working) + update data structures (DataPacket, Header) + test functions + organise code.
 
-[]:
+[07/10]: echange of ciphersuite and pkR (working on)

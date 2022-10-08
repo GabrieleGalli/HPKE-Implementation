@@ -15,4 +15,6 @@ Steps of the project
 
 [03/10]: exchange of needed data to encrypt and decrypt the message (working) + update data structures (DataPacket, Header) + test functions + organise code.
 
-[07/10]: echange of ciphersuite and pkR (working on); created [client ciphersuite](CS-HPKE/client/src/ciphersuite_client.rs) [server ciphersuite](CS-HPKE/server/src/ciphersuite_server.rs) in order to manage ciphersuites. Updated [data_packets_manager](CS-HPKE/client/src/data_packets_manager.rs) for new datatypes' options. Updated handle-functions in [client](CS-HPKE/client/src/main.rs) and [server](CS-HPKE/server/src/main.rs).
+[07/10]: exchange of ciphersuite and pkR (working on); created [client ciphersuite](CS-HPKE/client/src/ciphersuite_client.rs) [server ciphersuite](CS-HPKE/server/src/ciphersuite_server.rs) in order to manage ciphersuites. Updated [data_packets_manager](CS-HPKE/client/src/data_packets_manager.rs) for new datatypes' options. Updated handle-functions in [client](CS-HPKE/client/src/main.rs) and [server](CS-HPKE/server/src/main.rs).
+
+[08/10]: full exchange of ciphersuite, pkR and text; reorganized code in [client's main](CS-HPKE/client/src/main.rs); TODO: use the new ciphersuite to instatiate kem, kdf, aead.

@@ -1,5 +1,5 @@
 use std::net:: { TcpStream, SocketAddr };
-use std::str;
+use std::{str, clone};
 use std::io::{self, BufRead, BufReader, Write, Read, Error};
 use std::time::Duration;
 
@@ -74,9 +74,11 @@ fn send_packet(stream:&mut TcpStream, pack: &[u8], received_mex: &mut [u8], what
     }
 }
 
+
+// Gestisce l'arrivo del pacchetto memorizzandolo nel corretto vettore
 fn handle_data(mut stream: &TcpStream, vec: &mut Vec<u8>, buf: &[u8], mex: &[u8]) -> Result<(), Error> {
-    let id = buf[0];
-    let dtype = data_packets_manager::int_to_datatype_display(id);
+    let id = buf[0];                                                        
+    let dtype = data_packets_manager::int_to_datatype_display(id);      
     println!("Arrivato {}", dtype);
     display_buf(&buf);
     let bytes_written = stream.write(mex)?;
@@ -129,164 +131,159 @@ fn display_pack(pack: &[u8]) {
 }
 
 
-fn main() {
+fn handle_server(
+    remote: SocketAddr,
+    stream: &mut TcpStream, 
+    server_pk: &mut Vec<u8>,
+    kem: &mut String, 
+    kdf: &mut String, 
+    aead: &mut String,
+    available_kem_cps: &Vec<String>,
+    available_kdf_cps: &Vec<String>,
+    available_aead_cps: &Vec<String>,
+) -> Result<(), Error> {
 
-    //Generazione di chiave pubblica e privata del client
-    let (client_prikey, client_pubkey) = client_init();
-    
-    let remote: SocketAddr = "127.0.0.1:8888".parse().unwrap();
-
-    let kem_cps = ciphersuite_client::KEMtypeS::to_vect();
-    let kdf_cps = ciphersuite_client::KDFtypeS::to_vect();
-    let aead_cps = ciphersuite_client::AEADtypeS::to_vect();
-
-    let mut server_pubkey_bytes = [0 as u8; 32];
+    let mut received = [1 as u8];
+    let finish_cps = [8 as u8];
+    let finish_cps2 = [9 as u8];
     let mut data = [0 as u8; 100]; 
 
-    // Primary client initiates a request to the primary server. 
-    // The request contains a list of available ciphersuites for KEM, KDF, and AEAD.
-    match TcpStream::connect(remote) {
+    println!("\nConnessione al server avviata alla porta {}", remote);
 
-        Ok(mut stream) => {
 
-            // TUTT ASTA ROBA VA IN UNA FUNZIONE
-            let mut received = [1 as u8];
-            let finish_cps = [8 as u8];
-            //let key_req = [0 as u8];
+    // ##### INVIO DELLA CIPHERSUITE DISPONIBILE #####
 
-            println!("\nConnessione al server avviata alla porta {}", remote);
+    println!("\nInvio ciphersuite e richiesta chiave pubblica al server\n");  
 
-            println!("\nInvio ciphersuite al server\n");            
-
-            // invio di ciphersuite per kem
-            for i in kem_cps {
-                let kem_cps_pack = data_packets_manager::create_packet(
-                    data_packets_manager::DataType::Enc_ctx_KEM, 
-                    i.into_bytes()
-                );
-                let kem_cps_data_pack = kem_cps_pack.group();
-                let kem_cps_data_pack_bytes = kem_cps_data_pack.as_slice();
-                send_packet(&mut stream, kem_cps_data_pack_bytes, &mut received, String::from("KEM cps"));
-                display_pack(kem_cps_data_pack_bytes);
-            }
-
-            // invio di ciphersuite per kdf
-            for j in kdf_cps {
-                let kdf_cps_pack = data_packets_manager::create_packet(
-                    data_packets_manager::DataType::Enc_ctx_KDF, 
-                    j.into_bytes()
-                );
-                let kdf_cps_data_pack = kdf_cps_pack.group();
-                let kdf_cps_data_pack_bytes = kdf_cps_data_pack.as_slice();
-                send_packet(&mut stream, kdf_cps_data_pack_bytes, &mut received, String::from("KDF cps"));
-                display_pack(kdf_cps_data_pack_bytes);
-            }
-
-            // invio di ciphersuite per aead
-            for k in aead_cps {
-                let aead_cps_pack = data_packets_manager::create_packet(
-                    data_packets_manager::DataType::Enc_ctx_AEAD, 
-                    k.into_bytes()
-                );
-                let aead_cps_data_pack = aead_cps_pack.group();
-                let aead_cps_data_pack_bytes = aead_cps_data_pack.as_slice();
-                send_packet(&mut stream, aead_cps_data_pack_bytes, &mut received, String::from("AEAD cps"));
-                display_pack(aead_cps_data_pack_bytes);
-            }
-
-            // segnala a S che è stato inviato tutto il ciphersuite
-            stream.write(&finish_cps).unwrap();
-            println!("\nCiphersuite e richiesta chiave pubblica inviati");
-
-            let mut finish = false;
-            let ok_mex = [0 as u8];
-            let mut server_pubkey: Vec<u8> = vec![];
-            let mut choosen_kem: Vec<u8> = vec![];
-            let mut choosen_kdf: Vec<u8> = vec![];
-            let mut choosen_aead: Vec<u8> = vec![];
-            
-            println!("Aspetto la ciphersuite scellta dal server...");
-            while !finish {
-                let mut pk_pass = false;
-                let mut kem_pass = false;
-                let mut kdf_pass = false;
-                let mut aead_pass = false;
-
-                // TODO: METTERE ? NELLA FUNZ
-                let bytes_read = stream.read(&mut data);
-                //if bytes_read == 0 {return Ok(());}
-
-                // => Server's public key
-                if data[0] == 0 {
-                    // TODO: METTERE ? NELLA FUNZ
-                    handle_data(&mut stream, &mut server_pubkey, &data, &ok_mex);
-                    pk_pass = true;
-                }
-                // => KEM
-                if data[0] == 5 {
-                    // TODO: METTERE ? NELLA FUNZ
-                    handle_data(&mut stream, &mut choosen_kem, &data, &ok_mex);
-                    kem_pass = true;
-                }
-                // => KDF
-                if data[0] == 6 {
-                    // TODO: METTERE ? NELLA FUNZ
-                    handle_data(&mut stream, &mut choosen_kdf, &data, &ok_mex);
-                    kdf_pass = true;
-                }
-                // => AEAD
-                if data[0] == 7 {
-                    // TODO: METTERE ? NELLA FUNZ
-                    handle_data(&mut stream, &mut choosen_aead, &data, &ok_mex);
-                    aead_pass = true;
-                }
-            }
-
-            //TODO:i vettori ricevuti sono giusti (controllare i casi in cui alcuni algoritmi non sono disponibili)
-            // ma rimancono dei vec<u8>  ->  vanno convertiti in stringhe e dichiarati i type
-            // meglio mettere tutto in una funzione(?)
-
-            match stream.read(&mut server_pubkey_bytes) {
-
-                Ok(_)         => { println!("Chiave pubblica ricevuta"); },
-                Err(e) => { println!("Fallimento nel ricevere dati: {}", e); }
-
-            }
-        },
-
-        Err(e) => {
-            println!("Fallimento nel connettersi: {}", e);
-            return;
-        },
+    // => KEM
+    for i in available_kem_cps {
+        let clone = i.clone();
+        let kem_cps_pack = data_packets_manager::create_packet(
+            data_packets_manager::DataType::Enc_ctx_KEM, 
+            clone.into_bytes()
+        );
+        let kem_cps_data_pack = kem_cps_pack.group();
+        let kem_cps_data_pack_bytes = kem_cps_data_pack.as_slice();
+        send_packet(stream, kem_cps_data_pack_bytes, &mut received, String::from("KEM cps"));
+        display_pack(kem_cps_data_pack_bytes);
+    }
+    // => KDF
+    for j in available_kdf_cps {
+        let clone = j.clone();
+        let kdf_cps_pack = data_packets_manager::create_packet(
+            data_packets_manager::DataType::Enc_ctx_KDF, 
+            clone.into_bytes()
+        );
+        let kdf_cps_data_pack = kdf_cps_pack.group();
+        let kdf_cps_data_pack_bytes = kdf_cps_data_pack.as_slice();
+        send_packet(stream, kdf_cps_data_pack_bytes, &mut received, String::from("KDF cps"));
+        display_pack(kdf_cps_data_pack_bytes);
+    }
+    // => AEAD
+    for k in available_aead_cps {
+        let clone = k.clone();
+        let aead_cps_pack = data_packets_manager::create_packet(
+            data_packets_manager::DataType::Enc_ctx_AEAD, 
+            clone.into_bytes()
+        );
+        let aead_cps_data_pack = aead_cps_pack.group();
+        let aead_cps_data_pack_bytes = aead_cps_data_pack.as_slice();
+        send_packet(stream, aead_cps_data_pack_bytes, &mut received, String::from("AEAD cps"));
+        display_pack(aead_cps_data_pack_bytes);
     }
 
-    
-    // Recupera la serve public key
-    let server_pubkey = 
-        <Kem as KemTrait>::PublicKey::from_bytes(&mut server_pubkey_bytes)
-        .expect("could not deserialize the encapsulated pubkey!");
-   
-    
-    loop {
+    stream.write(&finish_cps).unwrap(); // segnala a S che è stato inviato tutto il ciphersuite
 
+    println!("\nCiphersuite e richiesta chiave pubblica inviati");
+
+    let ok_mex = [0 as u8]; // segnala con un write al server la ricezione del pacchetto
+
+    // vect per memorizzare gli algoritmi scelti
+    let mut server_pubkey: Vec<u8> = vec![];
+    let mut choosen_kem: Vec<u8> = vec![];
+    let mut choosen_kdf: Vec<u8> = vec![];
+    let mut choosen_aead: Vec<u8> = vec![];
+
+    // flag per segnalare che esiste almeno un algoritmo in comune di quel tipo
+    let mut pk_pass = false;
+    let mut kem_pass = false;
+    let mut kdf_pass = false;
+    let mut aead_pass = false;
+            
+
+    // ##### RICEZIONE DELLA CIPHERSUITE DEL SERVER #####
+
+    println!("Aspetto la ciphersuite scellta dal server...");
+
+    loop {
+               
+        let bytes_read = stream.read(&mut data)?;
+        if bytes_read == 0 {return Ok(());}
+
+        // => Server's public key
+        if data[0] == 0 {
+            handle_data(stream, &mut server_pubkey, &data, &ok_mex)?;
+            pk_pass = true;
+        }
+        // => KEM
+        if data[0] == 5 {
+            handle_data(stream, &mut choosen_kem, &data, &ok_mex)?;
+            kem_pass = true;
+        }
+        // => KDF
+        if data[0] == 6 {
+            handle_data(stream, &mut choosen_kdf, &data, &ok_mex)?;
+            kdf_pass = true;
+        }
+        // => AEAD
+        if data[0] == 7 {
+            handle_data(stream, &mut choosen_aead, &data, &ok_mex)?;
+            aead_pass = true;
+        }
+        if pk_pass && kem_pass && kdf_pass && aead_pass {
+            println!("Client ha ricevuto la ciphersuite del server");
+            break;   
+        }
+
+    }
+    
+    // #### OUTPUT DEI RISULTATI ####
+    *server_pk = server_pubkey;
+    *kem = String::from_utf8(choosen_kem).unwrap();
+    *kdf = String::from_utf8(choosen_kdf).unwrap();
+    *aead = String::from_utf8(choosen_aead).unwrap();
+    
+    //println!("kem {}", kem);
+    //println!("kdf {}", kdf);
+    //println!("aead {}", aead);
+
+    stream.write(&finish_cps2).unwrap();
+    
+    Ok(())
+
+}
+
+
+fn server_exchange_mex(stream: &mut TcpStream, associated_data: &[u8], server_pk: &<Kem as KemTrait>::PublicKey) -> Result<(), Error> {
+    
+    let mut received = [0 as u8; 1];
+
+    loop {
         // Testo che deve essere mandato criptato
         println!("\nInserisci testo");
         let mut input = String::new();
         io::stdin().read_line(&mut input).expect("Failed to read");
-
-        let associated_data = b"associated data";
 
         // Let the client send a message to the server using the server's pubkey
         let (encapped_key, ciphertext, tag) =   
             client_encrypt_msg(
                 input.as_bytes(), 
                 associated_data, 
-                &server_pubkey
+                &server_pk
             );
+        
 
-
-        // Operazioni per mandare pacchetti riconoscibili: 
-        // EncappedKey, Ciphertext(Vec<u8>), AssociatedData, TagBytes
+        // ##### CREAZIONE DEI PACCHETTI EncappedKey, Ciphertext, AssociatedData, TagBytes #####
 
         // => EncappedKey
         let ek = encapped_key.to_bytes().to_vec();
@@ -324,44 +321,96 @@ fn main() {
         let tb_data_pack = tb_pack.group();
         let tb_data_pack_bytes = tb_data_pack.as_slice();
 
-        // Invio dei pacchetti
-        match TcpStream::connect(remote) {
 
-            Ok(mut stream) => {
-                
-                let mut received = [0 as u8; 1];
+        // ##### INVIO DEI PACCHETTI EncappedKey, Ciphertext, AssociatedData, TagBytes #####
 
-                println!("\nInvio pacchetti al server...\n");
+        println!("\nInvio pacchetti al server...\n");
 
-                // INVIO ENCAPPEDKEY
-                send_packet(&mut stream, ek_data_pack_bytes, &mut received, String::from("EncappedKey"));
-                display_pack(ek_data_pack_bytes);
+        // => EncappedKey
+        send_packet(stream, ek_data_pack_bytes, &mut received, String::from("EncappedKey"));
+        display_pack(ek_data_pack_bytes);
 
-                // INVIO DI CIPHERTEXT
-                send_packet(&mut stream, ct_data_pack_bytes, &mut received, String::from("Ciphertext"));
-                display_pack(ct_data_pack_bytes);
+        // => ChiperText
+        send_packet(stream, ct_data_pack_bytes, &mut received, String::from("Ciphertext"));
+        display_pack(ct_data_pack_bytes);
 
-                // INVIO DI ASSOCIATEDDATA               
-                send_packet(&mut stream, ad_data_pack_bytes, &mut received, String::from("AssociatedData"));
-                display_pack(ad_data_pack_bytes);
+        // => AssociatedData             
+        send_packet(stream, ad_data_pack_bytes, &mut received, String::from("AssociatedData"));
+        display_pack(ad_data_pack_bytes);
 
-                // INVIO DI TAG               
-                send_packet(&mut stream, tb_data_pack_bytes, &mut received, String::from("Tag"));
-                display_pack(tb_data_pack_bytes);
+        // => TagBytes              
+        send_packet(stream, tb_data_pack_bytes, &mut received, String::from("Tag"));
+        display_pack(tb_data_pack_bytes);
 
-                // RICEZIONE DEL CONTENUTO MANDATO
-                let mut buf = [0 as u8; 100];
-                let bytes_read = stream.read(&mut buf);
-                let mut msg = buf.to_vec();
-                let msg = str::from_utf8(&msg).unwrap();
-                println!("Il server ha inviato: {}", msg);
+        // ##### RICEZIONE CONTENUTO MANDATO #####
+        let mut buf = [0 as u8; 100];
+        let bytes_read = stream.read(&mut buf);
+        let mut msg = buf.to_vec();
+        let msg = str::from_utf8(&msg).unwrap();
+        println!("Il server ha inviato: {}", msg);
 
-            },
-
-            Err(e) => {
-                println!("Fallimento nel connettersi: {}", e);
-                return;
-            },
-        }     
     }
+    Ok(())
+}
+
+
+fn main() {
+
+    //Generazione di chiave pubblica e privata del client
+    let (client_prikey, client_pubkey) = client_init();
+    
+    let remote: SocketAddr = "127.0.0.1:8888".parse().unwrap();
+
+    let kem_cps_av = ciphersuite_client::KEMtypeS::to_vect();
+    let kdf_cps_av = ciphersuite_client::KDFtypeS::to_vect();
+    let aead_cps_av = ciphersuite_client::AEADtypeS::to_vect();
+
+    let mut server_pubkey:Vec<u8> = vec![];
+
+    let mut kem_str:String = String::from("");
+    let mut kdf_str:String = String::from("");
+    let mut aead_str:String = String::from("");
+
+    let associated_data = b"associated data"; 
+       
+    match TcpStream::connect(remote) {
+
+        Ok(mut stream) => {
+
+            /*Primary client initiates a request to the primary server. 
+              The request contains a list of available ciphersuites for KEM, KDF, and AEAD. */
+            handle_server(
+                remote,
+                &mut stream, 
+                &mut server_pubkey, 
+                &mut kem_str, 
+                &mut kdf_str, 
+                &mut aead_str,
+                &kem_cps_av,
+                &kdf_cps_av,
+                &aead_cps_av
+            ).unwrap();
+            
+            println!("kem scelto: {}", kem_str);
+            println!("kdf scelto: {}", kdf_str);
+            println!("aead scelto: {}", aead_str);
+    
+            // Recupera la serve public key
+            let server_pubkey = <Kem as KemTrait>::PublicKey::from_bytes(
+                &mut server_pubkey.as_slice()
+            ).expect("could not deserialize the encapsulated pubkey!");
+
+            server_exchange_mex(
+                &mut stream, 
+                associated_data, 
+                &server_pubkey
+            ).unwrap();
+       },
+
+        Err(e) => {
+            println!("Fallimento nel connettersi: {}", e);
+            return;
+        },
+    }
+
 }

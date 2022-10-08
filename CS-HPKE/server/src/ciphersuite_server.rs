@@ -8,14 +8,14 @@ use strum_macros::EnumIter;
 pub enum KEMtypeR {
     // Algoritmi per KEM disponibili
     X25519HkdfSha256, 
-    DhP256HkdfSha256
+    //DhP256HkdfSha256
 }
 // implementazione di Display per stampare gli id degli algoritmi
 impl fmt::Display for KEMtypeR {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
             KEMtypeR::X25519HkdfSha256 => write!(f, "0x0010"),
-            KEMtypeR::DhP256HkdfSha256 => write!(f, "0x0020"),
+            //KEMtypeR::DhP256HkdfSha256 => write!(f, "0x0020"),
         }
     }
 }
@@ -35,7 +35,7 @@ impl KEMtypeR {
 pub enum KDFtypeR {
     // Algoritmi per KEM disponibili
     HkdfSha256, 
-    HkdfSha384, 
+    //HkdfSha384, 
     HkdfSha512
 }
 // implementazione di Display per stampare gli id degli algoritmi
@@ -43,7 +43,7 @@ impl fmt::Display for KDFtypeR {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
             KDFtypeR::HkdfSha256 => write!(f, "0x0001"),
-            KDFtypeR::HkdfSha384 => write!(f, "0x0002"),
+            //KDFtypeR::HkdfSha384 => write!(f, "0x0002"),
             KDFtypeR::HkdfSha512 => write!(f, "0x0003"),
         }
     }
@@ -64,18 +64,18 @@ impl KDFtypeR {
 pub enum AEADtypeR {
     // Algoritmi per KEM disponibili
     AesGcm128, 
-    AesGcm256, 
-    ChaCha20Poly1305, 
-    ExportOnlyAead
+    //AesGcm256, 
+    //ChaCha20Poly1305, 
+    //ExportOnlyAead
 }
 // implementazione di Display per stampare gli id degli algoritmi
 impl fmt::Display for AEADtypeR {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
             AEADtypeR::AesGcm128 => write!(f, "0x0001"),
-            AEADtypeR::AesGcm256 => write!(f, "0x0002"),
-            AEADtypeR::ChaCha20Poly1305 => write!(f, "0x0003"),
-            AEADtypeR::ExportOnlyAead => write!(f, "0xFFFF"),
+            //AEADtypeR::AesGcm256 => write!(f, "0x0002"),
+            //AEADtypeR::ChaCha20Poly1305 => write!(f, "0x0003"),
+            //AEADtypeR::ExportOnlyAead => write!(f, "0xFFFF"),
         }
     }
 }

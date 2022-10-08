@@ -90,7 +90,7 @@ fn ready(ek: &Vec<u8>, ct: &Vec<u8>, ad: &Vec<u8>, tb: &Vec<u8>) -> bool {
 }
 
 
-// Gestisce l'arrivo del ppacchetto memorizzandolo nel corretto vettore
+// Gestisce l'arrivo del pacchetto memorizzandolo nel corretto vettore
 fn handle_data(mut stream: &TcpStream, vec: &mut Vec<u8>, buf: &[u8], mex: &[u8]) -> Result<(), Error> {
     let id = buf[0];
     let dtype = data_packets_manager::int_to_datatype_display(id);
@@ -238,12 +238,14 @@ fn handle_client(mut stream: &TcpStream, pubkey: &[u8], privkey: &[u8], mex: &[u
     loop {
 
         let mut finish_cps = false;   // segnala quando il client ha inviato tutti
-                                            // gli algoritmi che ha a disposizione
-        
+                                            // gli algoritmi che ha a disposizione     
+
         let bytes_read = stream.read(&mut data)?;
         if bytes_read == 0 {return Ok(());}
 
-        // ARRIVO DELLE CIPHERSUITES DAL CLIENT
+
+        // ##### ARRIVO DELLE CIPHERSUITES DAL CLIENT #####
+
         // => KEM
         if data[0] == 5 && !finish_cps {
             handle_data_cps(stream, &mut client_kem_cps, &data, mex)?;
@@ -261,8 +263,15 @@ fn handle_client(mut stream: &TcpStream, pubkey: &[u8], privkey: &[u8], mex: &[u
             finish_cps = true;
             println!("Arrivata tutta la cps del client\n");
         }
+        // Trovata una ciphersuite comune -> esci
+        if data[0] == 9 {
+            println!("Il client ha ricevuto tutto!");
+            break;
+        }
 
-        // Controllo se esitono algoritmi utilizzabili in comune tra C e S
+
+        // ##### CONTROLLO SE ESEITE UNA CIPHERSUITE COMUNE COL CLIENT #####
+
         if finish_cps {
 
             // ID degli algoritmi scelti
@@ -276,27 +285,29 @@ fn handle_client(mut stream: &TcpStream, pubkey: &[u8], privkey: &[u8], mex: &[u
             (kem_id, kem_pass) = match_available_cps(
                 &client_kem_cps,
                 &server_av_kems
-            );
-            println!("KEM ID: {}", kem_id);
+            );   
             // => KDF
             (kdf_id, kdf_pass) = match_available_cps(
                 &client_kdf_cps,
                 &server_av_kdfs
-            );
-            println!("KDF ID: {}", kdf_id);
+            );      
             // => AEAD
             (aead_id, aead_pass) = match_available_cps(
                 &client_aead_cps,
                 &server_av_aeads
             );
+            
+            println!("KEM ID: {}", kem_id);
+            println!("KDF ID: {}", kdf_id);
             println!("AEAD ID: {}", aead_id);
 
             
-            // Se esiste una ciphersuite completa tra C e S, 
-            // segnala ala client quale algoritmo usare e invia la chiave pubblica
+            // Se esiste una ciphersuite completa tra C e S, segnala
+            // al client quale algoritmo usare e invia la chiave pubblica
             if kem_pass && kdf_pass && aead_pass {
 
-                // invio della ciphersuite
+                // ##### INVIO CIPHERSUITE AL CLIENT #####
+
                 // => KEM
                 let kem_id_pack = data_packets_manager::create_packet(
                     data_packets_manager::DataType::Enc_ctx_KEM,
@@ -335,6 +346,7 @@ fn handle_client(mut stream: &TcpStream, pubkey: &[u8], privkey: &[u8], mex: &[u
             }
         }
     }
+    Ok(())
 }
 
 

@@ -18,3 +18,9 @@ Steps of the project
 [07/10]: exchange of ciphersuite and pkR (working on); created [client ciphersuite](CS-HPKE/client/src/ciphersuite_client.rs) [server ciphersuite](CS-HPKE/server/src/ciphersuite_server.rs) in order to manage ciphersuites. Updated [data_packets_manager](CS-HPKE/client/src/data_packets_manager.rs) for new datatypes' options. Updated handle-functions in [client](CS-HPKE/client/src/main.rs) and [server](CS-HPKE/server/src/main.rs).
 
 [08/10]: full exchange of ciphersuite, pkR and text; reorganized code in [client's main](CS-HPKE/client/src/main.rs); TODO: use the new ciphersuite to instatiate kem, kdf, aead.
+
+[12/10]:  found 2 problems: (1): text messages with % and & are not correctly encoded; (2): cannot decide kem, kdf and aead at runtime => use [Agility](https://github.com/rozbb/rust-hpke/blob/master/examples/agility.rs).
+
+[13/10]: study of [Agility](https://github.com/rozbb/rust-hpke/blob/master/examples/agility.rs), its functions and their use.
+
+[14/10]: rewrote the code using agility methods => (2) was solved; now [client](CS-HPKE/client/src/main.rs) and [server](CS-HPKE/server/src/main.rs) exchange algorithms to be used (at runtime) and public key; TODO: decide which MODE to use.

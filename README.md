@@ -23,4 +23,6 @@ Steps of the project
 
 [13/10]: study of [Agility](https://github.com/rozbb/rust-hpke/blob/master/examples/agility.rs), its functions and their use.
 
-[14/10]: rewrote the code using agility methods => (2) was solved; now [client](CS-HPKE/client/src/main.rs) and [server](CS-HPKE/server/src/main.rs) exchange algorithms to be used (at runtime) and public key; TODO: decide which MODE to use.
+[Agility-tool branch]
+
+[14/10]: rewrote the code using agility methods => (2) was solved; now [client](https://github.com/GabrieleGalli/HPKE-Implementation/blob/Agility-tool/CS-HPKE/client/src/main.rs) and [server](https://github.com/GabrieleGalli/HPKE-Implementation/blob/Agility-tool/CS-HPKE/server/src/main.rs) exchange algorithms to be used (at runtime) and public key; TODO: decide which MODE to use.

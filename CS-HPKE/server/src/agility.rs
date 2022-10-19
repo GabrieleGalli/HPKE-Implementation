@@ -109,7 +109,7 @@ impl AeadAlg {
         }
     }
 
-    pub fn try_from_u8(id: u8) -> Result<AeadAlg, AgileHpkeError> {
+    pub fn try_from_u16(id: u16) -> Result<AeadAlg, AgileHpkeError> {
         let res = match id {
             0x01 => AeadAlg::AesGcm128,
             0x02 => AeadAlg::AesGcm256,
@@ -120,7 +120,7 @@ impl AeadAlg {
         Ok(res)
     }
 
-    pub fn to_u8(self) -> u8 {
+    pub fn to_u16(self) -> u16 {
         match self {
             AeadAlg::AesGcm128 => 0x01,
             AeadAlg::AesGcm256 => 0x02,
@@ -145,7 +145,7 @@ impl KdfAlg {
         }
     }
 
-    pub fn try_from_u8(id: u8) -> Result<KdfAlg, AgileHpkeError> {
+    pub fn try_from_u16(id: u16) -> Result<KdfAlg, AgileHpkeError> {
         let res = match id {
             0x01 => KdfAlg::HkdfSha256,
             0x02 => KdfAlg::HkdfSha384,
@@ -156,7 +156,7 @@ impl KdfAlg {
         Ok(res)
     }
 
-    pub fn to_u8(self) -> u8 {
+    pub fn to_u16(self) -> u16 {
         match self {
             KdfAlg::HkdfSha256 => 0x01,
             KdfAlg::HkdfSha384 => 0x02,
@@ -193,7 +193,7 @@ impl KemAlg {
         }
     }
 
-    pub fn try_from_u8(id: u8) -> Result<KemAlg, AgileHpkeError> {
+    pub fn try_from_u16(id: u16) -> Result<KemAlg, AgileHpkeError> {
         let res = match id {
             0x10 => KemAlg::DhP256HkdfSha256,
             0x11 => KemAlg::DhP384HkdfSha384,
@@ -206,7 +206,7 @@ impl KemAlg {
         Ok(res)
     }
 
-    pub fn to_u8(self) -> u8 {
+    pub fn to_u16(self) -> u16 {
         match self {
             KemAlg::DhP256HkdfSha256 => 0x10,
             KemAlg::DhP384HkdfSha384 => 0x11,

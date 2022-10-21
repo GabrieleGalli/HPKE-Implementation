@@ -16,9 +16,19 @@ pub fn int_to_datatype_display(i: u8) -> String {
         String::from("EncKey")
     } else if i == codes::CIPHERTEXT {
         String::from("CipherText")
+    } else if i == codes::PSK_ID {
+        String::from("PSK ID")
     } else {
         String::from("Unknown")
     }
+}
+
+pub fn print_buf(buf: &[u8], what: String) {
+    print!("{}: ", what);
+    for i in buf {
+        print!("{} ",i);
+    }
+    println!("");
 }
 
 // Printa il pacchetto completo u8
@@ -31,7 +41,7 @@ pub fn display_pack(pack: &[u8]) {
         count += 1;
         print!("{} ",i);
     }
-    println!("\nlen: {}\n\n", count);
+    println!("\nlen: {}\n", count);
 }
 
 pub fn display_vect<T>(vect: &Vec<T>) 

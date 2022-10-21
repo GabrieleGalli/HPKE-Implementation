@@ -3,32 +3,36 @@ mod ciphersuite;
 mod agility;
 mod data_pack_manager;
 mod utils;
+mod psk;
 
 use core::panic;
-use std::net::{ TcpListener, TcpStream, SocketAddr };
-use std::io::{ Read, Write, Error };
+use std:: { str, vec, io::{ Read, Write, Error }, net::{ TcpListener, TcpStream, SocketAddr } };
+use codes::RECEIVED_M;
 use rand::{ rngs::StdRng, SeedableRng };
-use agility::{ KemAlg, KdfAlg, AeadAlg, AgilePublicKey };
+use agility::{ KemAlg, KdfAlg, AeadAlg, AgilePublicKey, AgilePskBundle, AgileOpModeRTy, AgileOpModeR, agile_setup_receiver, AgileEncappedKey };
 
 fn send_pack(stream:&mut TcpStream, pack: &[u8], what: String) -> u8 {
-    let mut buf = [1 as u8]; 
+    
+    let mut buf = [1 as u8; 10]; 
 
     stream.write(pack).unwrap();
-    println!("{} inviata", what);
+    println!("{} sent", what);
 
     match stream.read(&mut buf) {
-
-        Ok(_) => {
-            if buf == [codes::RECEIVED] { 
-                println!("Il client ha ricevuto {}", what);
+        Ok(bytes_read) => {
+            if bytes_read > 1 {
+                println!("bytes read: {}", bytes_read);
+                panic!("send_pack :: some error in receiving a response");
+            }
+            if buf[0] == codes::RECEIVED { 
+                println!("Server has received {}", what);
                 return codes::RECEIVED;
             } else {
                 return codes::RET_ERROR;
             }
         },
         Err(e) => {
-            println!("Fallimento nel ricevere dati: {}", e);
-            return codes::RET_ERROR;
+            panic!("send_pack ::{}", e);
         }
     }
 }
@@ -45,14 +49,14 @@ fn handle_data_u8(mut stream: &TcpStream, output_vec: &mut Vec<u8>, input_buf: &
         if protocol == codes::UTF8 {
             utils::display_pack(input_buf);
             loop {
-                while index <= ((pack_len + 1)).into() {
+                while index <= ((pack_len + data_pack_manager::DATA_START_POS_U8 - 1)).into() {
                     output_vec.push(input_buf[index]);
                     index += 1;
                 }
                 break;
             }
-        } else { panic!("wrong arguments"); }
-    } else { panic!("payload inesistente"); }
+        } else { panic!("handle_data_u8 :: wrong arguments"); }
+    } else { panic!("handle_data_u8 :: payload inesistente"); }
 
     utils::display_vect(output_vec);
     Ok(())
@@ -70,7 +74,7 @@ fn handle_data_u16(mut stream: &TcpStream, output_vec: &mut Vec<u16>, input_buf:
         if protocol == codes::UTF16 {
             utils::display_pack(input_buf);
             loop {
-                while index <= ((pack_len + 1)).into() {
+                while index <= ((pack_len + data_pack_manager::DATA_START_POS_U8 - 1)).into() {
                     let data = [input_buf[index], input_buf[index+1]];
                     let be_data = u16::from_be_bytes(data);
                     output_vec.push(be_data);
@@ -78,8 +82,8 @@ fn handle_data_u16(mut stream: &TcpStream, output_vec: &mut Vec<u16>, input_buf:
                 }
                 break;
             }
-        } else { panic!("wrong arguments"); }
-    } else { panic!("payload inesistente"); }
+        } else { panic!("handle_data_u16 :: wrong arguments"); }
+    } else { panic!("handle_data_u16 :: non-existing payload"); }
 
     utils::display_vect(output_vec);
     Ok(())
@@ -173,11 +177,11 @@ fn choose_algorithms(
     }
 
     if kem_pass && kdf_pass && aead_pass {
-        println!("Scelti tutti gli algoritmi\n");
+        println!("All algorithms have been choosen\n");
         _found_common_chipersuite = true;
     } else {
         stream.write(&codes::BREAK_CONNECTION_M).unwrap();
-        panic!("Algoritmi in comune non sufficienti");
+        panic!("choose_algorithms :: Insufficient common algorithms");
     }
 
     return (choosen_kem, choosen_kdf, choosen_aead, _found_common_chipersuite);
@@ -185,14 +189,7 @@ fn choose_algorithms(
 }
 
 
-
-fn send_algorithms_and_pubkey (
-    stream: &mut TcpStream,
-    kem: KemAlg,
-    kdf: KdfAlg,
-    aead: AeadAlg,
-    pubkey: AgilePublicKey
-) -> Result<(), Error> {
+fn send_algorithms_and_pubkey (stream: &mut TcpStream, kem: KemAlg, kdf: KdfAlg, aead: AeadAlg, pubkey: AgilePublicKey) -> Result<(), Error> {
 
     // ##### INVIO AL CLIENT GLI ALGORITMI SCELTI #####
 
@@ -225,14 +222,67 @@ fn send_algorithms_and_pubkey (
     if send_pack(stream, pk_pack, String::from("Public Key")) == codes::RET_ERROR { panic!("Failed to send packet") }
     utils::display_pack(pk_pack);
 
-    stream.write(&codes::FINISHED_M).unwrap();
+    //stream.write(&codes::FINISHED_M).unwrap();
     println!("Inviati gli algoritmi scelti e la chiave pubblica\n");
 
     Ok(())
 
 }
 
+fn receive_pskid(mut stream: &TcpStream) -> Result<u8, Error> {
+    let mut data = [0 as u8; 100];
+    let mut out: Vec<u8> = vec![];
+    loop {
+        let bytes_read = stream.read(&mut data)?;
+        if bytes_read == 0 {continue;}
+        let id = data[data_pack_manager::ID_POS_HEADER];
+
+        if id == codes::PSK_ID {
+            println!("id arrivato");
+            handle_data_u8(stream, &mut out, &data)?;
+            if out.len() == 1 {
+                return Ok(out[0]);
+            }
+            
+        }
+    }
+}
+
+fn receive_enc(mut stream: &TcpStream) -> Result<Vec<u8>, Error> {
+    let mut data = [0 as u8; 100];
+    let mut out: Vec<u8> = vec![];
+    loop {
+        let bytes_read = stream.read(&mut data)?;
+        if bytes_read == 0 {continue;}
+        let id = data[data_pack_manager::ID_POS_HEADER];
+
+        if id == codes::ENCKEY {
+            println!("enc arrivato");
+            handle_data_u8(stream, &mut out, &data)?;
+            return Ok(out);           
+        }
+    }
+}
+
+fn receive_cps(mut stream: &TcpStream) -> Result<Vec<u8>, Error> {
+    let mut data = [0 as u8; 100];
+    let mut out: Vec<u8> = vec![];
+    loop {
+        let bytes_read = stream.read(&mut data)?;
+        if bytes_read == 0 {continue;}
+        let id = data[data_pack_manager::ID_POS_HEADER];
+
+        if id == codes::CIPHERTEXT {
+            println!("ciphertext arrivato");
+            handle_data_u8(stream, &mut out, &data)?;
+            return Ok(out);           
+        }
+    }
+}
+
 fn main() {
+    let info = b"Example session";
+
     // algoritmi supportati dal server
     let supported_kem_algs = ciphersuite::supported_kem_algs();
     let supported_kdf_algs = ciphersuite::supported_kdf_algs();
@@ -257,6 +307,7 @@ fn main() {
         match stream {
             Ok(mut stream) => {
                 (client_av_kems, client_av_kdfs, client_av_aeads) = handle_client(&stream).unwrap();
+
                 (kem, kdf, aead, common_cps_exist) = choose_algorithms(
                     &stream,
                     &mut client_av_kems,
@@ -270,19 +321,53 @@ fn main() {
                 // Receiver key pair
                 let mut csprng = StdRng::from_entropy();
                 let server_keypair = agility::agile_gen_keypair(kem, &mut csprng);
-                let public_key = server_keypair.1;
+                let public_key = server_keypair.1.clone();
 
                 if common_cps_exist {
-                    send_algorithms_and_pubkey(
-                        &mut stream,
-                        kem,
-                        kdf,
-                        aead,
-                        public_key
-                    ).unwrap();
+                    send_algorithms_and_pubkey(&mut stream, kem, kdf, aead, public_key).unwrap();
                 } else {
-                    panic!("Non ci sono algoritmi in comune")
+                    panic!("main :: No common algorithms")
                 }
+
+                // PSK bundle
+                let psk_id = receive_pskid(&stream).unwrap();
+                let psk_id = [psk_id];
+                let psk = psk::get_psk_from_id(&psk_id, kdf);
+                let psk_bundle = {
+                    AgilePskBundle(hpke::PskBundle {
+                        psk: &psk,
+                        psk_id: &psk_id,
+                    })
+                };
+
+                // OpMODE
+                let op_mode_r_ty = AgileOpModeRTy::AuthPsk(server_keypair.1.clone(), psk_bundle);
+                let op_mode_r = AgileOpModeR {
+                    kem_alg: kem,
+                    op_mode_ty: op_mode_r_ty,
+                };
+
+                // ##### ENC #####
+                let enc = receive_enc(&stream).unwrap();
+                let enc = AgileEncappedKey {
+                    kem_alg: kem,
+                    encapped_key_bytes: enc
+                };
+                utils::print_buf(&enc.encapped_key_bytes, String::from("enc"));
+                // receiver context
+                let mut aead_ctx_r = agile_setup_receiver(
+                    aead,
+                    kdf,
+                    kem,
+                    &op_mode_r,
+                    &server_keypair,
+                    &enc,
+                    &info[..],
+                )
+                .unwrap();
+
+                let msg = receive_cps(&stream).unwrap();
+                println!("{}", str::from_utf8(&msg).unwrap());
                 
             }
             Err(e) => { 

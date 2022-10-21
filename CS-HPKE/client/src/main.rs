@@ -3,46 +3,45 @@ mod ciphersuite;
 mod agility;
 mod data_pack_manager;
 mod utils;
+mod psk;
 
-use std::net:: { TcpStream, SocketAddr };
-use std::io::{ self, BufRead, BufReader, Write, Read, Error };
+use std:: { io::{ Write, Read, Error }, net:: { TcpStream, SocketAddr } };
 use rand::{ rngs::StdRng, SeedableRng };
 use agility::{ KemAlg, KdfAlg, AeadAlg, AgilePublicKey, AgileEncappedKey };
 
+use crate::agility::{AgileOpModeSTy, AgileOpModeS, AgilePskBundle, agile_setup_sender, AgileAeadCtxS};
+
 fn send_pack(stream: &mut TcpStream, pack: &[u8], what: String) -> u8 {
-    let mut buf = [1 as u8]; 
+
+    let mut buf = [1 as u8; 10]; 
 
     stream.write(pack).unwrap();
-    println!("{} inviata", what);
-
+    println!("{} sent", what);
+   
     match stream.read(&mut buf) {
-
-        Ok(_) => {
-            if buf == [codes::RECEIVED] { 
-                println!("Il server ha ricevuto {}", what);
+        Ok(bytes_read) => {
+            if bytes_read > 1 {
+                println!("bytes read: {}", bytes_read);
+                panic!("Some error in receiving a response");
+            }
+            if buf[0] == codes::RECEIVED { 
+                println!("Server has received {}", what);
                 return codes::RECEIVED;
             } else {
                 return codes::RET_ERROR;
             }
         },
         Err(e) => {
-            println!("Fallimento nel ricevere dati: {}", e);
-            return codes::RET_ERROR;
+            panic!("ERROR::{}", e);
         }
     }
+
 }
 
-fn send_ciphersuite(
-    remote: SocketAddr, 
-    stream: &mut TcpStream, 
-    supported_kem: &[KemAlg], 
-    supported_kdf: &[KdfAlg], 
-    supported_aead: &[AeadAlg],
-) -> Result<(), Error> {
+fn send_ciphersuite(stream: &mut TcpStream, supported_kem: &[KemAlg], supported_kdf: &[KdfAlg], supported_aead: &[AeadAlg]) -> Result<(), Error> {
 
     // ##### INVIO DELLA CIPHERSUITE DISPONIBILE AL SERVER #####
     
-    println!("\nConnessione al server avviata alla porta {}", remote);
     println!("\nInvio ciphersuite e richiesta chiave pubblica al server\n"); 
 
     let mut v_kem = vec![];
@@ -106,14 +105,14 @@ fn handle_data_u8(mut stream: &TcpStream, output_vec: &mut Vec<u8>, input_buf: &
         if protocol == codes::UTF8 {
             utils::display_pack(input_buf);
             loop {
-                while index <= ((pack_len + 1)).into() {
+                while index <= ((pack_len + data_pack_manager::DATA_START_POS_U8 - 1)).into() {
                     output_vec.push(input_buf[index]);
                     index += 1;
                 }
                 break;
             }
-        } else { panic!("wrong arguments"); }
-    } else { panic!("payload inesistente"); }
+        } else { panic!("handle_data_u8 ::wrong arguments"); }
+    } else { panic!("handle_data_u8 ::payload inesistente"); }
 
     utils::display_vect(output_vec);
     Ok(())
@@ -131,7 +130,7 @@ fn handle_data_u16(mut stream: &TcpStream, output_vec: &mut Vec<u16>, input_buf:
         if protocol == codes::UTF16 {
             utils::display_pack(input_buf);
             loop {
-                while index <= ((pack_len + 1)).into() {
+                while index <= ((pack_len + data_pack_manager::DATA_START_POS_U8 - 1)).into() {
                     let data = [input_buf[index], input_buf[index+1]];
                     let be_data = u16::from_be_bytes(data);
                     output_vec.push(be_data);
@@ -139,8 +138,8 @@ fn handle_data_u16(mut stream: &TcpStream, output_vec: &mut Vec<u16>, input_buf:
                 }
                 break;
             }
-        } else { panic!("wrong arguments"); }
-    } else { panic!("payload inesistente"); }
+        } else { panic!("handle_data_u16 ::wrong arguments"); }
+    } else { panic!("handle_data_u16 ::payload inesistente"); }
 
     utils::display_vect(output_vec);
     Ok(())
@@ -173,8 +172,9 @@ fn get_algorithms(stream: &mut TcpStream) -> Result<(KemAlg, KdfAlg, AeadAlg, Ag
         let id = data[data_pack_manager::ID_POS_HEADER];
 
         if id == codes::BREAK_CONNECTION {
-            panic!("Non ci sono algoritmi in comune");
+            panic!("get_algorithms :: Insufficient common algorithms");
         }
+       
         // => KEM
         if id == codes::KEM {
             println!("Arrivato kem scelto dal server");
@@ -249,42 +249,101 @@ fn get_algorithms(stream: &mut TcpStream) -> Result<(KemAlg, KdfAlg, AeadAlg, Ag
     
 }
 
+fn send_pskid(stream: &mut TcpStream, kdf: &KdfAlg, psk_id: u8) -> Result<Vec<u8>, Error> {
 
-fn main() {
+    // ##### INVIO DELL'ID DELLA PSK DA USARE AL SERVER #####
+    
+    println!("\nInvio psk_id al server\n"); 
+    let binding = data_pack_manager::pack_as_vect(vec![psk_id], codes::UTF8, codes::PSK_ID);
+    let pskid_pack = binding.as_slice();
+    if send_pack(stream, pskid_pack, String::from("PSK ID")) == codes::RET_ERROR { panic!("Failed to send packet") }
+    utils::display_pack(pskid_pack);
+    Ok(psk::get_psk_from_id(psk_id, *kdf))
+}
+
+fn send_enc(stream: &mut TcpStream, enc: AgileEncappedKey) -> Result<(), Error> {
+
+    // ##### INVIO DI ENC AL SERVER #####
+    
+    println!("\nInvio ENC al server\n"); 
+    let binding = data_pack_manager::pack_as_vect(enc.encapped_key_bytes, codes::UTF8, codes::ENCKEY);
+    let enc_pack = binding.as_slice();
+    if send_pack(stream, enc_pack, String::from("PSK ID")) == codes::RET_ERROR { panic!("Failed to send packet") }
+    utils::display_pack(enc_pack);
+    Ok(())
+}
+
+fn server_exchange_mex(stream: &mut TcpStream, mut aead_ctx: Box<dyn AgileAeadCtxS>) {
+    let msg = b"paper boy paper boy";
+    let aad = b"all about that paper, boy";
+    let ciphertext = aead_ctx.seal(msg, aad).unwrap();
+    let binding = data_pack_manager::pack_as_vect(ciphertext, codes::UTF8, codes::CIPHERTEXT);
+    let ciphertext = binding.as_slice();
+    if send_pack(stream, ciphertext, String::from("Ciphertext")) == codes::RET_ERROR { panic!("Failed to send packet") }
+    utils::display_pack(ciphertext);
+}
+
+fn main() {  
+    let info = b"Example session";
+
     // algoritmi supportati dal server
     let supported_kem_algs = ciphersuite::supported_kem_algs();
     let supported_kdf_algs = ciphersuite::supported_kdf_algs();
     let supported_aead_algs = ciphersuite::supported_aead_algs();
-
-    // Inizializzazioni
-    let mut kem = agility::KemAlg::X25519HkdfSha256;
-    let mut kdf = agility::KdfAlg::HkdfSha256;
-    let mut aead = agility::AeadAlg::AesGcm128;
-    let spk;
 
     let remote: SocketAddr = "127.0.0.1:8888".parse().unwrap();
 
     match TcpStream::connect(remote) {
 
         Ok(mut stream) => {
-            send_ciphersuite(
-                remote,
-                &mut stream,
-                supported_kem_algs,
-                supported_kdf_algs,
-                supported_aead_algs
-            ).unwrap();
+
+            println!("\nConnection to server at port: {}", remote);
+
+            send_ciphersuite(&mut stream, supported_kem_algs, supported_kdf_algs, supported_aead_algs).unwrap();
             
-            (kem, kdf, aead, spk) = get_algorithms(&mut stream).unwrap();
+            let (kem, kdf, aead, spk) = get_algorithms(&mut stream).unwrap();
 
             // Sender key pair
             let mut csprng = StdRng::from_entropy();
             let client_keypair = agility::agile_gen_keypair(kem, &mut csprng);
+            let public_key = client_keypair.1.clone();
 
-            
+            // PSK bundle
+            let psk_id = [1 as u8];
+            let psk = send_pskid(&mut stream, &kdf, psk_id[0]).unwrap();
+            let psk_bundle = {
+                AgilePskBundle(hpke::PskBundle {
+                    psk: &psk,
+                    psk_id: &psk_id,
+                })
+            };
+
+            // OpMODE
+            let op_mode_s_ty = AgileOpModeSTy::AuthPsk(client_keypair.clone(), psk_bundle);
+            let op_mode_s = AgileOpModeS {
+                kem_alg: kem,
+                op_mode_ty: op_mode_s_ty,
+            };
+
+            // ##### ENC ##### + sender context
+            let (enc, aead_ctx_s) = agile_setup_sender(
+                aead,
+                kdf,
+                kem,
+                &op_mode_s,
+                &spk,
+                &info[..],
+                &mut csprng,
+            )
+            .unwrap();
+
+            send_enc(&mut stream, enc.clone()).unwrap();
+
+            server_exchange_mex(&mut stream, aead_ctx_s);
+
         }
         Err(e) => {
-            println!("Fallimento nel connettersi: {}\n", e);
+            println!("Connection Failure: {}\n", e);
             return;
         },
     }

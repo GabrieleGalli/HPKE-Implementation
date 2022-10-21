@@ -31,7 +31,7 @@ trait AgileAeadCtxS {
     fn seal(&mut self, plaintext: &[u8], aad: &[u8]) -> Result<Vec<u8>, AgileHpkeError>;
 }
 
-trait AgileAeadCtxR {
+pub trait AgileAeadCtxR {
     fn open_in_place_detached(
         &mut self,
         ciphertext: &mut [u8],
@@ -241,8 +241,8 @@ impl AgilePublicKey {
 
 #[derive(Clone)]
 pub struct AgileEncappedKey {
-    kem_alg: KemAlg,
-    encapped_key_bytes: Vec<u8>,
+    pub kem_alg: KemAlg,
+    pub encapped_key_bytes: Vec<u8>,
 }
 
 impl AgileEncappedKey {
@@ -313,9 +313,9 @@ pub fn agile_gen_keypair<R: CryptoRng + RngCore>(kem_alg: KemAlg, csprng: &mut R
 }
 
 #[derive(Clone)]
-struct AgileOpModeR<'a> {
-    kem_alg: KemAlg,
-    op_mode_ty: AgileOpModeRTy<'a>,
+pub struct AgileOpModeR<'a> {
+    pub kem_alg: KemAlg,
+    pub op_mode_ty: AgileOpModeRTy<'a>,
 }
 
 impl<'a> AgileOpModeR<'a> {
@@ -364,7 +364,7 @@ impl<'a> AgileOpModeR<'a> {
 }
 
 #[derive(Clone)]
-enum AgileOpModeRTy<'a> {
+pub enum AgileOpModeRTy<'a> {
     Base,
     Psk(AgilePskBundle<'a>),
     Auth(AgilePublicKey),
@@ -433,7 +433,7 @@ enum AgileOpModeSTy<'a> {
 }
 
 #[derive(Clone, Copy)]
-struct AgilePskBundle<'a>(PskBundle<'a>);
+pub struct AgilePskBundle<'a>(pub PskBundle<'a>);
 
 impl<'a> AgilePskBundle<'a> {
     fn try_lift<Kdf: KdfTrait>(self) -> Result<PskBundle<'a>, AgileHpkeError> {
@@ -608,7 +608,7 @@ where
     Ok(Box::new(aead_ctx))
 }
 
-fn agile_setup_receiver(
+pub fn agile_setup_receiver(
     aead_alg: AeadAlg,
     kdf_alg: KdfAlg,
     kem_alg: KemAlg,

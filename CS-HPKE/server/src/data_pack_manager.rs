@@ -3,6 +3,7 @@ pub const ID_POS_HEADER:        usize   = 0;    // position of the ID in the hea
 pub const PROT_POS_HEADER:      usize   = 1;    // position of the utf data type in the header 
 pub const DATALEN_POS_HEADER:   usize   = 2;    // position of the payload length in the header
 pub const DATA_START_POS:       usize   = 3;    // position of the firt payload element 
+pub const DATA_START_POS_U8:    u8      = 3;    // MUST be equal to DATA_START_POS
 
 
 pub struct Header {

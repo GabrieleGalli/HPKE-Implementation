@@ -11,6 +11,7 @@ pub const ASSOCIATED_DATA:      u8 = 9;
 pub const TAGBYTES:             u8 = 10;
 pub const UTF8:                 u8 = 11;    
 pub const UTF16:                u8 = 12;
+pub const PSK_ID:               u8 = 13; 
 pub const BREAK_CONNECTION:     u8 = 99;      
 
 pub const RECEIVED_M: [u8; 1] = [0 as u8];

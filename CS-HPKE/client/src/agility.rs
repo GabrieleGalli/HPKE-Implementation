@@ -22,7 +22,7 @@ use hpke::{
 
 use rand::{CryptoRng, RngCore};
 
-trait AgileAeadCtxS {
+pub trait AgileAeadCtxS {
     fn seal_in_place_detached(
         &mut self,
         plaintext: &mut [u8],
@@ -164,7 +164,7 @@ impl KdfAlg {
         }
     }
 
-    fn get_digest_len(&self) -> usize {
+    pub fn get_digest_len(&self) -> usize {
         match self {
             KdfAlg::HkdfSha256 => 32,
             KdfAlg::HkdfSha384 => 48,
@@ -242,7 +242,7 @@ impl AgilePublicKey {
 #[derive(Clone)]
 pub struct AgileEncappedKey {
     kem_alg: KemAlg,
-    encapped_key_bytes: Vec<u8>,
+    pub encapped_key_bytes: Vec<u8>,
 }
 
 impl AgileEncappedKey {
@@ -372,9 +372,9 @@ enum AgileOpModeRTy<'a> {
 }
 
 #[derive(Clone)]
-struct AgileOpModeS<'a> {
-    kem_alg: KemAlg,
-    op_mode_ty: AgileOpModeSTy<'a>,
+pub struct AgileOpModeS<'a> {
+    pub kem_alg: KemAlg,
+    pub op_mode_ty: AgileOpModeSTy<'a>,
 }
 
 impl<'a> AgileOpModeS<'a> {
@@ -425,7 +425,7 @@ impl<'a> AgileOpModeS<'a> {
 }
 
 #[derive(Clone)]
-enum AgileOpModeSTy<'a> {
+pub enum AgileOpModeSTy<'a> {
     Base,
     Psk(AgilePskBundle<'a>),
     Auth(AgileKeypair),
@@ -433,7 +433,7 @@ enum AgileOpModeSTy<'a> {
 }
 
 #[derive(Clone, Copy)]
-struct AgilePskBundle<'a>(PskBundle<'a>);
+pub struct AgilePskBundle<'a>(pub PskBundle<'a>);
 
 impl<'a> AgilePskBundle<'a> {
     fn try_lift<Kdf: KdfTrait>(self) -> Result<PskBundle<'a>, AgileHpkeError> {
@@ -536,7 +536,7 @@ where
     Ok((encapped_key, Box::new(aead_ctx)))
 }
 
-fn agile_setup_sender<R: CryptoRng + RngCore>(
+pub fn agile_setup_sender<R: CryptoRng + RngCore>(
     aead_alg: AeadAlg,
     kdf_alg: KdfAlg,
     kem_alg: KemAlg,

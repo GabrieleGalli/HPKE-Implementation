@@ -6,33 +6,37 @@ mod utils;
 mod psk;
 
 use core::panic;
-use std:: { str, vec, io::{ Read, Write, Error }, net::{ TcpListener, TcpStream, SocketAddr } };
-use codes::RECEIVED_M;
+use std:: { 
+    str, 
+    vec, 
+    io:: { Read, Write, Error }, 
+    net:: { TcpListener, TcpStream, SocketAddr } 
+};
 use rand::{ rngs::StdRng, SeedableRng };
-use agility::{ KemAlg, KdfAlg, AeadAlg, AgilePublicKey, AgilePskBundle, AgileOpModeRTy, AgileOpModeR, agile_setup_receiver, AgileEncappedKey };
+use agility::{ KemAlg, KdfAlg, AeadAlg, AgilePublicKey, AgilePskBundle, AgileOpModeRTy, AgileOpModeR, agile_setup_receiver, AgileEncappedKey, AgileAeadCtxR };
 
 fn send_pack(stream:&mut TcpStream, pack: &[u8], what: String) -> u8 {
     
     let mut buf = [1 as u8; 10]; 
 
     stream.write(pack).unwrap();
-    println!("{} sent", what);
+    println!("=> {} sent", what);
 
     match stream.read(&mut buf) {
         Ok(bytes_read) => {
             if bytes_read > 1 {
-                println!("bytes read: {}", bytes_read);
-                panic!("send_pack :: some error in receiving a response");
+                panic!("send_pack :: some error in receiving a response, bytes read: {}", bytes_read);
             }
             if buf[0] == codes::RECEIVED { 
-                println!("Server has received {}", what);
+                println!("Client has received {}", what);
+                utils::display_pack(pack);
                 return codes::RECEIVED;
             } else {
                 return codes::RET_ERROR;
             }
         },
         Err(e) => {
-            panic!("send_pack ::{}", e);
+            panic!("send_pack :: {}", e);
         }
     }
 }
@@ -59,12 +63,13 @@ fn handle_data_u8(mut stream: &TcpStream, output_vec: &mut Vec<u8>, input_buf: &
     } else { panic!("handle_data_u8 :: payload inesistente"); }
 
     utils::display_vect(output_vec);
+
     Ok(())
 }
 
 fn handle_data_u16(mut stream: &TcpStream, output_vec: &mut Vec<u16>, input_buf: &[u8]) -> Result<(), Error> {
     let bytes_written = stream.write(&codes::RECEIVED_M)?;
-    if bytes_written == 0 {return Ok(());}
+    if bytes_written == 0 { return Ok(()); }
 
     let mut index = data_pack_manager::DATA_START_POS;
     let pack_len = input_buf[data_pack_manager::DATALEN_POS_HEADER];
@@ -92,7 +97,7 @@ fn handle_data_u16(mut stream: &TcpStream, output_vec: &mut Vec<u16>, input_buf:
 
 fn handle_client(mut stream: &TcpStream) -> Result<(Vec<u16>, Vec<u16>, Vec<u16>), Error> {
     
-    // ##### RICEZIONE DELLA CIPHERSUITE DISPONIBILE DEL CLIENT #####
+    // ##### RECEPTION OF AVAILABLE CLIENT CIPHERSUITE #####
 
     let mut data = [0 as u8; 100]; 
     let mut kems = vec![];
@@ -105,7 +110,7 @@ fn handle_client(mut stream: &TcpStream) -> Result<(Vec<u16>, Vec<u16>, Vec<u16>
         let id = data[data_pack_manager::ID_POS_HEADER];
 
         if id == codes::FINISH {
-            println!("Ricevuta tutta la ciphersuite del client\n");
+            println!("=> All client ciphersuite received\n");
             break;
         } else if id == codes::KEM {
             handle_data_u16(stream, &mut kems, &data)?;
@@ -122,17 +127,17 @@ fn handle_client(mut stream: &TcpStream) -> Result<(Vec<u16>, Vec<u16>, Vec<u16>
 // Sceglie il primo algoritmo in comune che trova per ogni tipo 
 fn choose_algorithms(
     mut stream: &TcpStream,
-    client_kems: &mut Vec<u16>, 
-    client_kdfs: &mut Vec<u16>, 
-    client_aeads: &mut Vec<u16>,
+    client_kems: &Vec<u16>, 
+    client_kdfs: &Vec<u16>, 
+    client_aeads: &Vec<u16>,
     supported_kems: &[KemAlg],
     supported_kdfs: &[KdfAlg],
     supported_aeads: &[AeadAlg]
 ) -> (KemAlg, KdfAlg, AeadAlg, bool) {
 
-    // ##### SCELTA DEGLI ALGORITMI #####
+    // ##### CHOICE OF ALGORITHMS #####
 
-    println!("Scelgo gli algoritmi da usare...\n");
+    println!("=> Choosing the algorithms to be used...\n");
 
     let mut choosen_kem = KemAlg::DhP256HkdfSha256;
     let mut choosen_kdf = KdfAlg::HkdfSha384;
@@ -177,7 +182,7 @@ fn choose_algorithms(
     }
 
     if kem_pass && kdf_pass && aead_pass {
-        println!("All algorithms have been choosen\n");
+        println!("=> All algorithms have been choosen\n");
         _found_common_chipersuite = true;
     } else {
         stream.write(&codes::BREAK_CONNECTION_M).unwrap();
@@ -185,45 +190,39 @@ fn choose_algorithms(
     }
 
     return (choosen_kem, choosen_kdf, choosen_aead, _found_common_chipersuite);
-
 }
 
 
-fn send_algorithms_and_pubkey (stream: &mut TcpStream, kem: KemAlg, kdf: KdfAlg, aead: AeadAlg, pubkey: AgilePublicKey) -> Result<(), Error> {
+fn send_algorithms_pubkey_r(stream: &mut TcpStream, kem: KemAlg, kdf: KdfAlg, aead: AeadAlg, pubkey: AgilePublicKey) -> Result<(), Error> {
 
-    // ##### INVIO AL CLIENT GLI ALGORITMI SCELTI #####
+    // ##### SENDING THE CHOSEN ALGORITHMS TO THE CLIENT #####
 
-    println!("Invio gli algoritmi scelti...\n");
+    println!("=> Sending chosen algorithms...\n");
     
     let kem = kem.to_u16();
     let v_kem = utils::u16_to_vec_be(kem);
     let binding = data_pack_manager::pack_as_vect(v_kem, codes::UTF16, codes::KEM);
     let kem_pack = binding.as_slice();
     if send_pack(stream, kem_pack, String::from("KEM algorithm")) == codes::RET_ERROR { panic!("Failed to send packet") }
-    utils::display_pack(kem_pack);
 
     let kdf = kdf.to_u16();
     let v_kdf = utils::u16_to_vec_be(kdf);
     let binding = data_pack_manager::pack_as_vect(v_kdf, codes::UTF16, codes::KDF);
     let kdf_pack = binding.as_slice();
     if send_pack(stream, kdf_pack, String::from("KDF algorithm")) == codes::RET_ERROR { panic!("Failed to send packet") }
-    utils::display_pack(&kdf_pack);
 
     let aead = aead.to_u16();
     let v_aead = utils::u16_to_vec_be(aead);
     let binding = data_pack_manager::pack_as_vect(v_aead, codes::UTF16, codes::AEAD);
     let aead_pack = binding.as_slice();
     if send_pack(stream, aead_pack, String::from("AEAD algorithm")) == codes::RET_ERROR { panic!("Failed to send packet") }
-    utils::display_pack(aead_pack);
 
     let pk = pubkey.pubkey_bytes;
     let binding = data_pack_manager::pack_as_vect(pk, codes::UTF8, codes::PUBKEY);
     let pk_pack = binding.as_slice();
     if send_pack(stream, pk_pack, String::from("Public Key")) == codes::RET_ERROR { panic!("Failed to send packet") }
-    utils::display_pack(pk_pack);
 
-    //stream.write(&codes::FINISHED_M).unwrap();
-    println!("Inviati gli algoritmi scelti e la chiave pubblica\n");
+    println!("=> Selected algorithms and public key sent\n");
 
     Ok(())
 
@@ -234,85 +233,122 @@ fn receive_pskid(mut stream: &TcpStream) -> Result<u8, Error> {
     let mut out: Vec<u8> = vec![];
     loop {
         let bytes_read = stream.read(&mut data)?;
-        if bytes_read == 0 {continue;}
+        if bytes_read == 0 { continue; }
         let id = data[data_pack_manager::ID_POS_HEADER];
 
         if id == codes::PSK_ID {
-            println!("id arrivato");
+            println!("=> PSK_ID arrived");
             handle_data_u8(stream, &mut out, &data)?;
             if out.len() == 1 {
                 return Ok(out[0]);
-            }
-            
+            }      
         }
     }
 }
 
-fn receive_enc(mut stream: &TcpStream) -> Result<Vec<u8>, Error> {
+fn receive_enc(mut stream: &TcpStream, kem: &KemAlg) -> Result<(Vec<u8>, AgilePublicKey), Error> {
     let mut data = [0 as u8; 100];
-    let mut out: Vec<u8> = vec![];
+    let mut enc: Vec<u8> = vec![];
+
+    let mut enc_pass = false;
+    let mut pk_pass = false;
+
+    let mut client_pubkey = AgilePublicKey { kem_alg: *kem, pubkey_bytes: [0 as u8].to_vec() };
+
     loop {
         let bytes_read = stream.read(&mut data)?;
         if bytes_read == 0 {continue;}
         let id = data[data_pack_manager::ID_POS_HEADER];
 
         if id == codes::ENCKEY {
-            println!("enc arrivato");
-            handle_data_u8(stream, &mut out, &data)?;
-            return Ok(out);           
+            println!("=> Encryption key arrived");
+            handle_data_u8(stream, &mut enc, &data)?;  
+            enc_pass = true;
+        } else if id == codes::PUBKEY {
+            println!("=> Client public key arrived");
+            let mut tmp = vec![];
+            handle_data_u8(stream, &mut tmp, &data)?;          
+            client_pubkey = AgilePublicKey {
+                kem_alg: *kem,
+                pubkey_bytes: tmp,
+            };
+            pk_pass = true;
+        }
+
+        if enc_pass && pk_pass {
+            return Ok((enc, client_pubkey));
         }
     }
 }
 
-fn receive_cps(mut stream: &TcpStream) -> Result<Vec<u8>, Error> {
-    let mut data = [0 as u8; 100];
-    let mut out: Vec<u8> = vec![];
+fn client_exchange_mex(mut stream: &TcpStream, mut aead_ctx: Box<dyn AgileAeadCtxR>) -> Result<(), Error> {
+    let mut ct:Vec<u8> = vec![]; 
+    let mut ad:Vec<u8> = vec![];  
+
+    let mut ct_pass = false;
+    let mut ad_pass = false;
+
+    let mut data = [0 as u8; 100]; 
+
     loop {
-        let bytes_read = stream.read(&mut data)?;
-        if bytes_read == 0 {continue;}
-        let id = data[data_pack_manager::ID_POS_HEADER];
 
+        let bytes_read = stream.read(&mut data)?;
+        if bytes_read == 0 { return Ok(()); }
+        let id = data[data_pack_manager::ID_POS_HEADER];
+        
         if id == codes::CIPHERTEXT {
-            println!("ciphertext arrivato");
-            handle_data_u8(stream, &mut out, &data)?;
-            return Ok(out);           
+            handle_data_u8(stream, &mut ct, &data)?;
+            ct_pass = true;
+        } else if id == codes::ASSOCIATED_DATA {
+            handle_data_u8(stream, &mut ad, &data)?;
+            ad_pass = true;
+        } else {
+            panic!("client_exchange_mex :: wrong input");
+        }
+
+        if ct_pass && ad_pass {
+            let ciphertext_copy = ct.clone();
+
+            let plaintext = aead_ctx.open(ciphertext_copy.as_slice(), ad.as_slice()).unwrap();
+
+            let msg = str::from_utf8(&plaintext).unwrap();
+            println!("=> Plaintext: {}", msg);
+            ct.clear();
+            ad.clear();
+            ct_pass = false;
+            ad_pass = false;
         }
     }
 }
+
+
 
 fn main() {
     let info = b"Example session";
 
-    // algoritmi supportati dal server
+    // Supported Server Algorithms
     let supported_kem_algs = ciphersuite::supported_kem_algs();
     let supported_kdf_algs = ciphersuite::supported_kdf_algs();
     let supported_aead_algs = ciphersuite::supported_aead_algs();
 
-    // serve solo per averli inizializzati
-    let mut kem = agility::KemAlg::X25519HkdfSha256;
-    let mut kdf = agility::KdfAlg::HkdfSha256;
-    let mut aead = agility::AeadAlg::AesGcm128;
-
-    // Algoritmi del client
-    let mut client_av_kems = vec![];
-    let mut client_av_kdfs = vec![];
-    let mut client_av_aeads = vec![];
-
-    let mut common_cps_exist: bool;
-    
     let remote: SocketAddr = "0.0.0.0:8888".parse().unwrap();
     let listener = TcpListener::bind(remote).expect("Could not bind");
 
     for stream in listener.incoming() {
-        match stream {
-            Ok(mut stream) => {
-                (client_av_kems, client_av_kdfs, client_av_aeads) = handle_client(&stream).unwrap();
 
-                (kem, kdf, aead, common_cps_exist) = choose_algorithms(
+        match stream {
+
+            Ok(mut stream) => {
+
+                println!("=> Incoming connection at port: {}\n", stream.peer_addr().unwrap());
+
+                let (client_available_kems, client_available_kdfs, client_available_aeads) = handle_client(&stream).unwrap();
+
+                let (kem, kdf, aead, common_ciphersuite_exist) = choose_algorithms(
                     &stream,
-                    &mut client_av_kems,
-                    &mut client_av_kdfs,
-                    &mut client_av_aeads,
+                    &client_available_kems,
+                    &client_available_kdfs,
+                    &client_available_aeads,
                     supported_kem_algs,
                     supported_kdf_algs,
                     supported_aead_algs
@@ -321,10 +357,10 @@ fn main() {
                 // Receiver key pair
                 let mut csprng = StdRng::from_entropy();
                 let server_keypair = agility::agile_gen_keypair(kem, &mut csprng);
-                let public_key = server_keypair.1.clone();
+                let server_publickey = server_keypair.1.clone();
 
-                if common_cps_exist {
-                    send_algorithms_and_pubkey(&mut stream, kem, kdf, aead, public_key).unwrap();
+                if common_ciphersuite_exist {
+                    send_algorithms_pubkey_r(&mut stream, kem, kdf, aead, server_publickey).unwrap();
                 } else {
                     panic!("main :: No common algorithms")
                 }
@@ -340,20 +376,20 @@ fn main() {
                     })
                 };
 
+                // ##### ENC #####
+                let (enc, client_publickey) = receive_enc(&stream, &kem).unwrap();
+                let enc = AgileEncappedKey {
+                    kem_alg: kem,
+                    encapped_key_bytes: enc
+                };
+
                 // OpMODE
-                let op_mode_r_ty = AgileOpModeRTy::AuthPsk(server_keypair.1.clone(), psk_bundle);
+                let op_mode_r_ty = AgileOpModeRTy::AuthPsk(client_publickey, psk_bundle);
                 let op_mode_r = AgileOpModeR {
                     kem_alg: kem,
                     op_mode_ty: op_mode_r_ty,
                 };
 
-                // ##### ENC #####
-                let enc = receive_enc(&stream).unwrap();
-                let enc = AgileEncappedKey {
-                    kem_alg: kem,
-                    encapped_key_bytes: enc
-                };
-                utils::print_buf(&enc.encapped_key_bytes, String::from("enc"));
                 // receiver context
                 let mut aead_ctx_r = agile_setup_receiver(
                     aead,
@@ -363,17 +399,15 @@ fn main() {
                     &server_keypair,
                     &enc,
                     &info[..],
-                )
-                .unwrap();
+                ).unwrap();
 
-                let msg = receive_cps(&stream).unwrap();
-                println!("{}", str::from_utf8(&msg).unwrap());
+                client_exchange_mex(&stream, aead_ctx_r).unwrap();
                 
             }
             Err(e) => { 
-                eprintln!("failed: {}", e) 
+                eprintln!("Failed: {}", e) 
             }
         }
     }
-
+    
 }

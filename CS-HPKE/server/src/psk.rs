@@ -45,15 +45,15 @@ pub fn get_psk_from_id(id: &[u8], kdf: KdfAlg) -> Vec<u8> {
     let id = id[0];
     if kdf == KdfAlg::HkdfSha256 {
         let hkdfsha256 = hashmap_psk_hkdfsha256();
-        let psk = hkdfsha256.get(&id).copied().unwrap(); 
+        let psk = hkdfsha256.get(&id).copied().expect("Any pre-shared key associated and this ID"); 
         return psk.to_vec();
     } else if kdf == KdfAlg::HkdfSha384 {
         let hkdfsha384 = hashmap_psk_hkdfsha384();
-        let psk = hkdfsha384.get(&id).copied().unwrap(); 
+        let psk = hkdfsha384.get(&id).copied().expect("Any pre-shared key associated and this ID");
         return psk.to_vec();
     } else if kdf == KdfAlg::HkdfSha512 {
         let hkdfsha512 = hashmap_psk_hkdfsha512();
-        let psk = hkdfsha512.get(&id).copied().unwrap(); 
+        let psk = hkdfsha512.get(&id).copied().expect("Any pre-shared key associated and this ID");
         return psk.to_vec();
     } else {
         panic!("Not available algorithm");

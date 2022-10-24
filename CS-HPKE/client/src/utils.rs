@@ -18,6 +18,10 @@ pub fn int_to_datatype_display(i: u8) -> String {
         String::from("CipherText")
     } else if i == codes::PSK_ID {
         String::from("PSK ID")
+    } else if i == codes::ASSOCIATED_DATA {
+        String::from("Associated Data")
+    } else if i == codes::TAGBYTES {
+        String::from("Tag Bytes")
     } else {
         String::from("Unknown")
     }

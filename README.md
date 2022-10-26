@@ -19,14 +19,20 @@ Steps of the project
 
 [08/10]: full exchange of ciphersuite, pkR and text; reorganized code in [client's main](CS-HPKE/client/src/main.rs); TODO: use the new ciphersuite to instatiate kem, kdf, aead.
 
-[12/10]:  found 2 problems: (1): text messages with % and & are not correctly encoded; (2 ok): cannot decide kem, kdf and aead at runtime => use [Agility](https://github.com/rozbb/rust-hpke/blob/master/examples/agility.rs).
+[12/10]:  found 2 problems: (1 ok): text messages with % and & are not correctly encoded; (2 ok): cannot decide kem, kdf and aead at runtime => use [Agility](https://github.com/rozbb/rust-hpke/blob/master/examples/agility.rs).
 
 [13/10]: study of [Agility](https://github.com/rozbb/rust-hpke/blob/master/examples/agility.rs), its functions and their use.
 
 [Agility-tool branch]
 
-[14/10]: rewrote the code using agility methods => (2) was solved; now [client](https://github.com/GabrieleGalli/HPKE-Implementation/blob/Agility-tool/CS-HPKE/client/src/main.rs) and [server](https://github.com/GabrieleGalli/HPKE-Implementation/blob/Agility-tool/CS-HPKE/server/src/main.rs) exchange algorithms to be used (at runtime) and public key; TODO: decide which MODE to use.
+[14/10]: rewrote the code using agility methods => (2) solved; now [client](https://github.com/GabrieleGalli/HPKE-Implementation/blob/Agility-tool/CS-HPKE/client/src/main.rs) and [server](https://github.com/GabrieleGalli/HPKE-Implementation/blob/Agility-tool/CS-HPKE/server/src/main.rs) exchange algorithms to be used (at runtime) and public key; TODO: decide which MODE to use.
 
-[17/10]: TODO: (3 ok) change algorithm code exchange using UTF16 Big Endian (via [from_be_bytes](https://doc.rust-lang.org/std/primitive.u16.html#method.from_be_bytes) and [to_be_bytes](https://doc.rust-lang.org/std/primitive.u16.html#method.to_be_bytes). (4) Use only [AuthPSK MODE](https://www.rfc-editor.org/rfc/rfc9180.html) => DO NOT exchange PSKs (note to both), EXCHANGE PSK_ID (sent INCLUDED) => use map or match {C and S can have multiple PSKs, each is associated with a PSK_ID }. NB, limits for PSK and PSK_ID in [rfc](https://www.rfc-editor.org/rfc/rfc9180.html) - 60 bits may be OK for all algorithms. (5) ENC is associated with SESSION C-S (map).
+[17/10]: TODO: (3 ok) change algorithm code exchange using UTF16 Big Endian (via [from_be_bytes](https://doc.rust-lang.org/std/primitive.u16.html#method.from_be_bytes) and [to_be_bytes](https://doc.rust-lang.org/std/primitive.u16.html#method.to_be_bytes). (4 ok) Use only [AuthPSK MODE](https://www.rfc-editor.org/rfc/rfc9180.html) => DO NOT exchange PSKs (note to both), EXCHANGE PSK_ID (sent INCLUDED) => use map or match {C and S can have multiple PSKs, each is associated with a PSK_ID }. NB, limits for PSK and PSK_ID in [rfc](https://www.rfc-editor.org/rfc/rfc9180.html) - 60 bits may be OK for all algorithms. (5) ENC is associated with SESSION C-S (map).
 
-[18/10]: (3) was solved. Now every packet sent has an additional bit that spcifies how to read the packet (UTF8 or UTF16). Added variants of the handle_data function (for u8 and for u16). Updated the way a packet is created.
+[18/10]: (3) solved. Now every packet sent has an additional bit that spcifies how to read the packet (UTF8 or UTF16). Added variants of the handle_data function (for u8 and for u16). Updated the way a packet is created.
+
+[21/10]: (4) solved. C and S exchange PSK_IDs and use a common PSK (contained in [psk](https://github.com/GabrieleGalli/HPKE-Implementation/blob/Agility-tool/CS-HPKE/server/src/psk.rs) both C and S) to instantiate their own PskBundle. C generates the ENC and sends it to S. Now, C and S have their own aead context with which they can encrypt and decrypt a message.
+
+[24/10]: (1) solved. Now C and S correctly exchange encrypted messages.
+
+[25/10]: TODO: (6) create Secondary Client SC and Secondary Server SS. SC and SS MUST know each other in advance. 

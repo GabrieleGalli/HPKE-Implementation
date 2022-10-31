@@ -1,14 +1,14 @@
-mod codes;
-mod ciphersuite;
-mod agility;
-mod data_pack_manager;
-mod utils;
 mod psk;
+mod codes;
+mod utils;
+mod agility;
+mod ciphersuite;
+mod data_pack_manager;
 
 use std:: { 
     io:: { Write, Read, Error, self }, 
-    net:: { TcpStream, SocketAddr },
-    str
+    net:: { TcpListener, TcpStream, SocketAddr },
+    str, vec
 };
 use rand::{ rngs::StdRng, SeedableRng };
 use agility::{ KemAlg, KdfAlg, AeadAlg, AgilePublicKey, AgileEncappedKey };
@@ -28,7 +28,7 @@ fn send_pack(stream: &mut TcpStream, pack: &[u8], what: String) -> u8 {
                 panic!("send_pack :: some error in receiving a response, bytes read: {}", bytes_read);
             }
             if buf[0] == codes::RECEIVED { 
-                println!("Server has received {}", what);
+                println!("Receiver has received {}", what);
                 utils::display_pack(pack);
                 return codes::RECEIVED;
             } else {
@@ -88,7 +88,7 @@ fn send_ciphersuite_s(stream: &mut TcpStream, supported_kem: &[KemAlg], supporte
     let aead_pack = binding.as_slice();
     if send_pack(stream, aead_pack, String::from("AEAD algorithms")) == codes::RET_ERROR { panic!("Failed to send packet") }
 
-    stream.write(&codes::FINISHED_M).unwrap();
+    //stream.write(&codes::FINISHED_M).unwrap();
     println!("=> Available ciphersuite sent to the server\n");
     Ok(())
 
@@ -112,8 +112,8 @@ fn handle_data_u8(mut stream: &TcpStream, output_vec: &mut Vec<u8>, input_buf: &
                 }
                 break;
             }
-        } else { panic!("handle_data_u8 ::wrong arguments"); }
-    } else { panic!("handle_data_u8 ::payload inesistente"); }
+        } else { panic!("handle_data_u8 :: Wrong arguments"); }
+    } else { panic!("handle_data_u8 :: Payload inesistente"); }
 
     utils::display_vect(output_vec);
     Ok(())
@@ -139,8 +139,8 @@ fn handle_data_u16(mut stream: &TcpStream, output_vec: &mut Vec<u16>, input_buf:
                 }
                 break;
             }
-        } else { panic!("handle_data_u16 ::wrong arguments"); }
-    } else { panic!("handle_data_u16 ::payload inesistente"); }
+        } else { panic!("handle_data_u16 :: Wrong arguments"); }
+    } else { panic!("handle_data_u16 :: Payload inesistente"); }
 
     utils::display_vect(output_vec);
     Ok(())
@@ -305,26 +305,44 @@ fn main() {
     let supported_kdf_algs = ciphersuite::supported_kdf_algs();
     let supported_aead_algs = ciphersuite::supported_aead_algs();
 
-    let remote: SocketAddr = "127.0.0.1:8888".parse().unwrap();
+    let _kem;
+    let _kdf;
+    let _aead;
+    let _enc;
+    let _psk;
+    let _pskid;
 
-    match TcpStream::connect(remote) {
+    let primary_server: SocketAddr = "127.0.0.1:8888".parse().unwrap();
+
+    match TcpStream::connect(primary_server) {
 
         Ok(mut stream) => {
 
-            println!("=> Connection to server at port: {}\n", remote);
+            println!("=> Connection to server at port: {}\n", primary_server);
+
+            let hello = data_pack_manager::pack_as_vect(codes::PC_M.to_vec(), codes::UTF8, codes::HELLO);
+            if send_pack(&mut stream, &hello, String::from("Connection request")) == codes::RET_ERROR { panic!("Failed to send packet") }
 
             send_ciphersuite_s(&mut stream, supported_kem_algs, supported_kdf_algs, supported_aead_algs).unwrap();
             
             let (kem, kdf, aead, server_publickey) = get_algorithms(&mut stream).unwrap();
 
+            _kem = kem.clone();
+            _kdf = kdf.clone();
+            _aead = aead.clone();
+
             // Sender key pair
             let mut csprng = StdRng::from_entropy();
-            let client_keypair = agility::agile_gen_keypair(kem, &mut csprng);
-            let client_publickey = client_keypair.1.clone();
+            let keypair = agility::agile_gen_keypair(kem, &mut csprng);
+            let public_key = keypair.1.clone();
 
             // PSK bundle
             let psk_id = [3 as u8];
             let psk = send_pskid(&mut stream, &kdf, psk_id[0]).unwrap();
+
+            _psk = psk.clone();
+            _pskid = psk_id.clone();
+
             let psk_bundle = {
                 AgilePskBundle(hpke::PskBundle {
                     psk: &psk,
@@ -333,7 +351,7 @@ fn main() {
             };
 
             // OpMODE
-            let op_mode_s_ty = AgileOpModeSTy::AuthPsk(client_keypair.clone(), psk_bundle);
+            let op_mode_s_ty = AgileOpModeSTy::AuthPsk(keypair.clone(), psk_bundle);
             let op_mode_s = AgileOpModeS {
                 kem_alg: kem,
                 op_mode_ty: op_mode_s_ty,
@@ -350,9 +368,11 @@ fn main() {
                 &mut csprng,
             ).unwrap();
 
-            send_enc_pubkey(&mut stream, enc.clone(), client_publickey.clone()).unwrap();
+            _enc = enc.clone();
 
-            server_exchange_mex(&mut stream, aead_ctx_s);
+            send_enc_pubkey(&mut stream, enc.clone(), public_key.clone()).unwrap();
+
+            //server_exchange_mex(&mut stream, aead_ctx_s);
 
         }
         Err(e) => {
@@ -360,5 +380,86 @@ fn main() {
             return;
         },
     }
-    
+
+    let remote: SocketAddr = "0.0.0.0:8889".parse().unwrap();
+    let listener = TcpListener::bind(remote).expect("Could not bind");
+    //let secondary_clients = vec![];
+
+    for stream in listener.incoming() {
+
+        match stream {
+
+            Ok(mut stream) => {
+
+                println!("=> Incoming connection at port: {}\n", stream.peer_addr().unwrap());
+                
+                let connection_type;
+                let mut data = [0 as u8; 100]; 
+                
+                loop {
+                    let bytes_read = stream.read(&mut data).unwrap();
+                    if bytes_read == 0 {continue;}
+                    let id = data[data_pack_manager::ID_POS_HEADER];
+
+                    if id == codes::HELLO {
+                        let mut tmp = vec![];
+                        handle_data_u8(&stream, &mut tmp, &data).unwrap();
+                        if tmp.len() == 1 {
+                            if tmp[0] == codes::PC {
+                                connection_type = codes::PC;
+                                break;
+                            } else if tmp[0] == codes::SS {
+                                connection_type = codes::SS;
+                                break;
+                            }
+                        }
+                    }
+                }
+
+                if connection_type == codes::SC {
+                    // => KEM
+                    let kem =  _kem.to_u16();
+                    let v_kem = utils::u16_to_vec_be(kem);
+                    let binding = data_pack_manager::pack_as_vect(v_kem, codes::UTF16, codes::KEM);
+                    let kem_pack = binding.as_slice();
+                    if send_pack(&mut stream, kem_pack, String::from("KEM algorithm")) == codes::RET_ERROR { panic!("Failed to send packet") }
+                
+                    // => KDF
+                    let kdf = _kdf.to_u16();
+                    let v_kdf = utils::u16_to_vec_be(kdf);
+                    let binding = data_pack_manager::pack_as_vect(v_kdf, codes::UTF16, codes::KDF);
+                    let kdf_pack = binding.as_slice();
+                    if send_pack(&mut stream, kdf_pack, String::from("KDF algorithm")) == codes::RET_ERROR { panic!("Failed to send packet") }
+
+                    // => AEAD
+                    let aead = _aead.to_u16();
+                    let v_aead = utils::u16_to_vec_be(aead);
+                    let binding = data_pack_manager::pack_as_vect(v_aead, codes::UTF16, codes::AEAD);
+                    let aead_pack = binding.as_slice();
+                    if send_pack(&mut stream, aead_pack, String::from("AEAD algorithm")) == codes::RET_ERROR { panic!("Failed to send packet") }
+
+                    // => ENC
+                    let tmp = _enc.clone();
+                    let binding = data_pack_manager::pack_as_vect(tmp.encapped_key_bytes, codes::UTF8, codes::ENCKEY);
+                    let enc_pack = binding.as_slice();
+                    if send_pack(&mut stream, enc_pack, String::from("ENC")) == codes::RET_ERROR { panic!("Failed to send packet") }
+
+                    // => PSK
+                    let tmp = _psk.clone();
+                    let binding = data_pack_manager::pack_as_vect(tmp, codes::UTF8, codes::PSK);
+                    let psk_pack = binding.as_slice();
+                    if send_pack(&mut stream, psk_pack, String::from("PSK")) == codes::RET_ERROR { panic!("Failed to send packet") }
+
+                    // => PSK_ID
+                    let binding = data_pack_manager::pack_as_vect(_pskid.to_vec(), codes::UTF8, codes::PSK_ID);
+                    let pskid_pack = binding.as_slice();
+                    if send_pack(&mut stream, pskid_pack, String::from("PSK_ID")) == codes::RET_ERROR { panic!("Failed to send packet") }
+                }
+            }
+            
+            Err(e) => { 
+                eprintln!("Failed: {}", e) 
+            }
+        }
+    }
 }

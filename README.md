@@ -35,4 +35,6 @@ Steps of the project
 
 [24/10]: (1) solved. Now C and S correctly exchange encrypted messages.
 
-[25/10]: TODO: (6) create Secondary Client SC and Secondary Server SS. SC and SS MUST know each other in advance. 
+[25/10]: TODO: (6 ok) create Secondary Client SC and Secondary Server SS. SC and SS MUST know each other in advance. 
+
+[26-28/10]: (6) solved. -> Intermediate step <-: SC communicates with PC and gets the necessary data for aead ctx, same thing three SS and PC. SC(SS) sends a hello message to PC(PS) (authentication) and this, if it has finished the first negotiation with PS(PC), sends it the data.

@@ -1,13 +1,13 @@
 # HPKE-Implementation
 What it implements
 ------------------
-The project consists of exchanging encrypted information between a client and a server by making use of the library [HPKE](https://www.rfc-editor.org/rfc/rfc9180.html), which complies with the [HPKE standard](https://www.rfc-editor.org/rfc/rfc9180.html) (RFC 9180). The aim is to demonstrate that [PDMv2](https://datatracker.ietf.org/doc/html/draft-ietf-ippm-encrypted-pdmv2-02) correctly integrates confidentiality, integrity and authentication to PDM. Briefly, from a primary client (PC) and a primary server (PS) performing a lightweight handshake, it must be possible to derive one or more secondary clients (SC) and one or more secondary servers (SS) that communicate in a secure manner.
+The project consists of exchanging encrypted information between a client and a server by making use of the [HPKE library](https://github.com/rozbb/rust-hpke), which complies with the [HPKE standard](https://www.rfc-editor.org/rfc/rfc9180.html) (RFC 9180). The aim is to demonstrate that [PDMv2](https://datatracker.ietf.org/doc/html/draft-ietf-ippm-encrypted-pdmv2-02) correctly integrates confidentiality, integrity and authentication to PDM. Briefly, from a primary client (PC) and a primary server (PS) performing a lightweight handshake, it must be possible to derive one or more secondary clients (SC) and one or more secondary servers (SS) that communicate in a secure manner.
 
 Steps of the project
 ------------------
-[19-25/09]: study [HPKE](https://www.rfc-editor.org/rfc/rfc9180.html) library + tcp-echo-server.
+[19-25/09]: study [HPKE](https://www.rfc-editor.org/rfc/rfc9180.html)  and [library](https://github.com/rozbb/rust-hpke) + tcp-echo-server.
 
-[27/09]: [HPKE](https://www.rfc-editor.org/rfc/rfc9180.html) library's examples of usage + start the project + exaples of exchange of conditioned data.
+[27/09]: HPKE library's examples of usage + start the project + exaples of exchange of conditioned data.
 
 [29/09]: created data structures [data_packets_manager](CS-HPKE/client/src/data_packets_manager.rs) for packing + try to exchange some conditioned data between C&S.
 

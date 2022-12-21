@@ -38,3 +38,7 @@ Steps of the project
 [25/10]: TODO: (6 ok) create Secondary Client SC and Secondary Server SS. SC and SS MUST know each other in advance. 
 
 [26-28/10]: (6) solved. -> Intermediate step <-: SC communicates with PC and gets the necessary data for aead ctx, same thing three SS and PC. SC(SS) sends a hello message to PC(PS) (authentication) and this, if it has finished the first negotiation with PS(PC), sends it the data.
+
+[08-16/11]: (7 ok) Siccome le entità seondarie dovranno usare lo shared_secret come imput al KDF, è necessario derivare quest'ultimo e passarlo a SC e SS. Inoltre (8 ok) per lo scambio di messaggi criptati tra SC e SS dobbiamo creare degli aead context; purtroppo, con la [library](https://github.com/rozbb/rust-hpke) che stiamo usando non è possibile creare un aead_ctx senza istanziare una nuva enc key, ne tantomeno creare un aead_ctx con una key data (shared_secret).  (7) solved. (8) solved -> al posto di usare un aead_ctx creeremo una [Strobe session](https://github.com/rozbb/strobe-rs)  in order to set up a symmetric secure channel using a preshared key.
+
+[21/12]: (9) lavorando su un corretto scambio di mssaggi cifrato con KDF concatenato con 5-tuple, Client-ID, Server-ID, Shared_Secret. (10) Lavorare su KRI e Nonce. 

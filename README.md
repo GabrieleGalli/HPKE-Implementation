@@ -39,6 +39,8 @@ Steps of the project
 
 [26-28/10]: (6) solved. -> Intermediate step <-: SC communicates with PC and gets the necessary data for aead ctx, same thing three SS and PC. SC(SS) sends a hello message to PC(PS) (authentication) and this, if it has finished the first negotiation with PS(PC), sends it the data.
 
-[08-16/11]: (7 ok) Siccome le entità seondarie dovranno usare lo shared_secret come imput al KDF, è necessario derivare quest'ultimo e passarlo a SC e SS. Inoltre (8 ok) per lo scambio di messaggi criptati tra SC e SS dobbiamo creare degli aead context; purtroppo, con la [library](https://github.com/rozbb/rust-hpke) che stiamo usando non è possibile creare un aead_ctx senza istanziare una nuva enc key, ne tantomeno creare un aead_ctx con una key data (shared_secret).  (7) solved. (8) solved -> al posto di usare un aead_ctx creeremo una [Strobe session](https://github.com/rozbb/strobe-rs)  in order to set up a symmetric secure channel using a preshared key.
+[08-16/11]: (7 ok) Since the seondary entities will have to use the shared_secret as an imput to the KDF, it is necessary to derive the latter and pass it to SC and SS. Also (8 ok) for exchanging encrypted messages between SC and SS we need to create aead contexts; unfortunately, with the [library](https://github.com/rozbb/rust-hpke) we are using it is not possible to create an aead_ctx without instantiating a new enc key, nor is it possible to create an aead_ctx with a given key (shared_secret).  (7) solved. (8) solved -> instead of using an aead_ctx we will create a [Strobe session](https://github.com/rozbb/strobe-rs) in order to set up a symmetric secure channel using a preshared key.
 
-[21/12]: (9) lavorando su un corretto scambio di mssaggi cifrato con KDF concatenato con 5-tuple, Client-ID, Server-ID, Shared_Secret. (10) Lavorare su KRI e Nonce. 
+[21/12]: (9) Working on proper encrypted message exchange with KDF concatenated with 5-tuple, Client-ID, Server-ID, Shared_Secret. (10) Working on KRI and Nonce. 
+
+[09/01]: Generation of session keys for SC and SS; design change from Design2 to Design1.

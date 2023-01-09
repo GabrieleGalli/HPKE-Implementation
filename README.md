@@ -1,13 +1,13 @@
 # HPKE-Implementation
 What it implements
 ------------------
-The project consists of exchanging encrypted information between a client and a server by making use of the library [HPKE](https://www.rfc-editor.org/rfc/rfc9180.html), which complies with the [HPKE standard](https://www.rfc-editor.org/rfc/rfc9180.html) (RFC 9180). The aim is to demonstrate that [PDMv2](https://datatracker.ietf.org/doc/html/draft-ietf-ippm-encrypted-pdmv2-02) correctly integrates confidentiality, integrity and authentication to PDM. Briefly, from a primary client (PC) and a primary server (PS) performing a lightweight handshake, it must be possible to derive one or more secondary clients (SC) and one or more secondary servers (SS) that communicate in a secure manner.
+The project consists of exchanging encrypted information between a client and a server by making use of the [HPKE library](https://github.com/rozbb/rust-hpke), which complies with the [HPKE standard](https://www.rfc-editor.org/rfc/rfc9180.html) (RFC 9180). The aim is to demonstrate that [PDMv2](https://datatracker.ietf.org/doc/html/draft-ietf-ippm-encrypted-pdmv2-02) correctly integrates confidentiality, integrity and authentication to PDM. Briefly, from a primary client (PC) and a primary server (PS) performing a lightweight handshake, it must be possible to derive one or more secondary clients (SC) and one or more secondary servers (SS) that communicate in a secure manner.
 
 Steps of the project
 ------------------
-[19-25/09]: study [HPKE](https://www.rfc-editor.org/rfc/rfc9180.html) library + tcp-echo-server.
+[19-25/09]: study [HPKE](https://www.rfc-editor.org/rfc/rfc9180.html)  and [library](https://github.com/rozbb/rust-hpke) + tcp-echo-server.
 
-[27/09]: [HPKE](https://www.rfc-editor.org/rfc/rfc9180.html) library's examples of usage + start the project + exaples of exchange of conditioned data.
+[27/09]: HPKE library's examples of usage + start the project + exaples of exchange of conditioned data.
 
 [29/09]: created data structures [data_packets_manager](CS-HPKE/client/src/data_packets_manager.rs) for packing + try to exchange some conditioned data between C&S.
 
@@ -38,3 +38,7 @@ Steps of the project
 [25/10]: TODO: (6 ok) create Secondary Client SC and Secondary Server SS. SC and SS MUST know each other in advance. 
 
 [26-28/10]: (6) solved. -> Intermediate step <-: SC communicates with PC and gets the necessary data for aead ctx, same thing three SS and PC. SC(SS) sends a hello message to PC(PS) (authentication) and this, if it has finished the first negotiation with PS(PC), sends it the data.
+
+[08-16/11]: (7 ok) Siccome le entità seondarie dovranno usare lo shared_secret come imput al KDF, è necessario derivare quest'ultimo e passarlo a SC e SS. Inoltre (8 ok) per lo scambio di messaggi criptati tra SC e SS dobbiamo creare degli aead context; purtroppo, con la [library](https://github.com/rozbb/rust-hpke) che stiamo usando non è possibile creare un aead_ctx senza istanziare una nuva enc key, ne tantomeno creare un aead_ctx con una key data (shared_secret).  (7) solved. (8) solved -> al posto di usare un aead_ctx creeremo una [Strobe session](https://github.com/rozbb/strobe-rs)  in order to set up a symmetric secure channel using a preshared key.
+
+[21/12]: (9) lavorando su un corretto scambio di mssaggi cifrato con KDF concatenato con 5-tuple, Client-ID, Server-ID, Shared_Secret. (10) Lavorare su KRI e Nonce. 

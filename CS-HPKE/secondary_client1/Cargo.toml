@@ -8,5 +8,6 @@ edition = "2021"
 [dependencies]
 hpke = "0.9.0"
 rand = "0.8.3"
-strum = "0.24.1"
-strum_macros = "0.24"
+strobe-rs = "0.7.0"
+concat-kdf = "0.1.0"
+sha2 = { version = "0.10", default-features = false }

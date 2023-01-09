@@ -16,12 +16,18 @@ pub fn int_to_datatype_display(i: u8) -> String {
         String::from("EncKey")
     } else if i == codes::CIPHERTEXT {
         String::from("CipherText")
+    } else if i == codes::PSK {
+        String::from("PSK")
     } else if i == codes::PSK_ID {
         String::from("PSK ID")
     } else if i == codes::ASSOCIATED_DATA {
         String::from("Associated Data")
-    } else if i == codes::TAGBYTES {
-        String::from("Tag Bytes")
+    } else if i == codes::SECRET {
+        String::from("Secret")
+    } else if i == codes::SHSEC {
+        String::from("Shared Secret")
+    } else if i == codes::HELLO {
+        String::from("Hello")
     } else {
         String::from("Unknown")
     }

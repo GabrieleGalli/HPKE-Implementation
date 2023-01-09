@@ -8,12 +8,12 @@ mod data_pack_manager;
 use std:: { 
     io:: { Write, Read, Error, self }, 
     net:: { TcpListener, TcpStream, SocketAddr },
-    str, vec
+    vec
 };
 use rand::{ rngs::StdRng, SeedableRng };
 use agility::{ KemAlg, KdfAlg, AeadAlg, AgilePublicKey, AgileEncappedKey };
 
-use crate::agility::{AgileOpModeSTy, AgileOpModeS, AgilePskBundle, agile_setup_sender, AgileAeadCtxS};
+use crate::agility::{AgileOpModeSTy, AgileOpModeS, AgilePskBundle, AgileAeadCtxS, agile_setup_sender_primary};
 
 fn send_pack(stream: &mut TcpStream, pack: &[u8], what: String) -> u8 {
 
@@ -29,7 +29,7 @@ fn send_pack(stream: &mut TcpStream, pack: &[u8], what: String) -> u8 {
             }
             if buf[0] == codes::RECEIVED { 
                 println!("Receiver has received {}", what);
-                utils::display_pack(pack);
+                //utils::display_pack(pack);
                 return codes::RECEIVED;
             } else {
                 return codes::RET_ERROR;
@@ -104,7 +104,7 @@ fn handle_data_u8(mut stream: &TcpStream, output_vec: &mut Vec<u8>, input_buf: &
 
     if pack_len > 0 {
         if protocol == codes::UTF8 {
-            utils::display_pack(input_buf);
+            //utils::display_pack(input_buf);
             loop {
                 while index <= ((pack_len + data_pack_manager::DATA_START_POS_U8 - 1)).into() {
                     output_vec.push(input_buf[index]);
@@ -129,7 +129,7 @@ fn handle_data_u16(mut stream: &TcpStream, output_vec: &mut Vec<u16>, input_buf:
 
     if pack_len > 0 {
         if protocol == codes::UTF16 {
-            utils::display_pack(input_buf);
+            //utils::display_pack(input_buf);
             loop {
                 while index <= ((pack_len + data_pack_manager::DATA_START_POS_U8 - 1)).into() {
                     let data = [input_buf[index], input_buf[index+1]];
@@ -311,6 +311,7 @@ fn main() {
     let _enc;
     let _psk;
     let _pskid;
+    let _shared_secret;
 
     let primary_server: SocketAddr = "127.0.0.1:8888".parse().unwrap();
 
@@ -358,7 +359,7 @@ fn main() {
             };
 
             // ##### ENC ##### + sender context
-            let (enc, aead_ctx_s) = agile_setup_sender(
+            let (enc, shared_secret) = agile_setup_sender_primary(
                 aead,
                 kdf,
                 kem,
@@ -369,11 +370,11 @@ fn main() {
             ).unwrap();
 
             _enc = enc.clone();
+            _shared_secret = shared_secret.clone();
 
             send_enc_pubkey(&mut stream, enc.clone(), public_key.clone()).unwrap();
 
             //server_exchange_mex(&mut stream, aead_ctx_s);
-
         }
         Err(e) => {
             println!("Connection Failure: {}\n", e);
@@ -381,9 +382,10 @@ fn main() {
         },
     }
 
-    let remote: SocketAddr = "0.0.0.0:8889".parse().unwrap();
-    let listener = TcpListener::bind(remote).expect("Could not bind");
+    let socket_pc: SocketAddr = "0.0.0.0:8889".parse().unwrap();
+    let listener = TcpListener::bind(socket_pc).expect("Could not bind");
     //let secondary_clients = vec![];
+    
 
     for stream in listener.incoming() {
 
@@ -405,8 +407,8 @@ fn main() {
                         let mut tmp = vec![];
                         handle_data_u8(&stream, &mut tmp, &data).unwrap();
                         if tmp.len() == 1 {
-                            if tmp[0] == codes::PC {
-                                connection_type = codes::PC;
+                            if tmp[0] == codes::SC {
+                                connection_type = codes::SC;
                                 break;
                             } else if tmp[0] == codes::SS {
                                 connection_type = codes::SS;
@@ -417,6 +419,7 @@ fn main() {
                 }
 
                 if connection_type == codes::SC {
+                    println!("connesso SC");
                     // => KEM
                     let kem =  _kem.to_u16();
                     let v_kem = utils::u16_to_vec_be(kem);
@@ -438,11 +441,31 @@ fn main() {
                     let aead_pack = binding.as_slice();
                     if send_pack(&mut stream, aead_pack, String::from("AEAD algorithm")) == codes::RET_ERROR { panic!("Failed to send packet") }
 
-                    // => ENC
-                    let tmp = _enc.clone();
-                    let binding = data_pack_manager::pack_as_vect(tmp.encapped_key_bytes, codes::UTF8, codes::ENCKEY);
-                    let enc_pack = binding.as_slice();
-                    if send_pack(&mut stream, enc_pack, String::from("ENC")) == codes::RET_ERROR { panic!("Failed to send packet") }
+                    // => Shared Secret - SCK
+                    let Km = _shared_secret.clone();
+                      // supporre di conoscere gli id di client e server e il pair_id
+                      let server_id = [2 as u8];
+                      let client_id = [13 as u8];
+                      let pair_id = [1 as u8];
+
+                      let mut kdf_km_pairid: [u8; 32] = [0; 32];
+                      concat_kdf::derive_key_into::<sha2::Sha256>(&Km, &pair_id, &mut kdf_km_pairid).unwrap();
+                      utils::print_buf(kdf_km_pairid.as_slice(), String::from("km_pairid"));
+                  
+                      let mut sck: [u8; 32] = [0; 32];
+                      concat_kdf::derive_key_into::<sha2::Sha256>(&kdf_km_pairid, &client_id, &mut sck).unwrap();
+                      utils::print_buf(sck.as_slice(), String::from("SCK"));
+
+                    let binding = data_pack_manager::pack_as_vect(sck.to_vec(), codes::UTF8, codes::SHSEC);
+                    let shse_pack = binding.as_slice();
+                    if send_pack(&mut stream, shse_pack, String::from("SCK")) == codes::RET_ERROR { panic!("Failed to send packet") }
+                    
+                    /* PROVA COMUNICAZIONE CON SHARED SECRET NON DERIVATO CON KDF
+                    let tmp = _shared_secret.clone();
+                    let binding = data_pack_manager::pack_as_vect(tmp, codes::UTF8, codes::SHSEC);
+                    let shse_pack = binding.as_slice();
+                    if send_pack(&mut stream, shse_pack, String::from("SHSE")) == codes::RET_ERROR { panic!("Failed to send packet") }
+                    */
 
                     // => PSK
                     let tmp = _psk.clone();

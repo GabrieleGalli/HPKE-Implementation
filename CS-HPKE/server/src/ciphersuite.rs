@@ -10,9 +10,9 @@ pub fn supported_kem_algs() -> &'static [KemAlg] {
 
 pub fn supported_kdf_algs() -> &'static [KdfAlg] {
     return &[
-        //KdfAlg::HkdfSha256, 
+        KdfAlg::HkdfSha256, 
         //KdfAlg::HkdfSha384, 
-        KdfAlg::HkdfSha512,
+        //KdfAlg::HkdfSha512,
     ];
 }
 

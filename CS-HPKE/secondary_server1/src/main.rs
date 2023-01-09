@@ -5,11 +5,14 @@ mod data_pack_manager;
 
 use std:: { 
     io:: { Write, Read, Error, self }, 
-    net:: { TcpStream, SocketAddr },
+    net:: { TcpStream, SocketAddr, TcpListener },
     str, vec
 };
 use rand::{ rngs::StdRng, SeedableRng };
 use agility::{ KemAlg, KdfAlg, AeadAlg, AgilePublicKey, AgilePskBundle, AgileEncappedKey, AgileAeadCtxR };
+use strobe_rs::Strobe;
+
+use crate::{agility::{AgileOpModeRTy, AgileOpModeR, agile_setup_receiver_secondary }, utils::{display_vect, print_buf}};
 
 
 fn send_pack(stream: &mut TcpStream, pack: &[u8], what: String) -> u8 {
@@ -26,7 +29,7 @@ fn send_pack(stream: &mut TcpStream, pack: &[u8], what: String) -> u8 {
             }
             if buf[0] == codes::RECEIVED { 
                 println!("Receiver has received {}", what);
-                utils::display_pack(pack);
+                //utils::display_pack(pack);
                 return codes::RECEIVED;
             } else {
                 return codes::RET_ERROR;
@@ -75,7 +78,7 @@ fn handle_data_u16(mut stream: &TcpStream, output_vec: &mut Vec<u16>, input_buf:
 
     if pack_len > 0 {
         if protocol == codes::UTF16 {
-            utils::display_pack(input_buf);
+            //utils::display_pack(input_buf);
             loop {
                 while index <= ((pack_len + data_pack_manager::DATA_START_POS_U8 - 1)).into() {
                     let data = [input_buf[index], input_buf[index+1]];
@@ -101,14 +104,14 @@ fn ps_req(stream: &mut TcpStream) -> Result<(KemAlg, KdfAlg, AeadAlg, Vec<u8>, V
     let mut kem: KemAlg = KemAlg::X25519HkdfSha256;
     let mut kdf: KdfAlg = KdfAlg::HkdfSha256;
     let mut aead: AeadAlg = AeadAlg::AesGcm128;
-    let mut enc: Vec<u8> = vec![];
+    let mut secret: Vec<u8> = vec![];
     let mut psk: Vec<u8> = vec![];
     let mut pskid: Vec<u8> = vec![];
 
     let mut kem_pass = false;
     let mut kdf_pass = false;
     let mut aead_pass = false;
-    let mut enc_pass = false;
+    let mut secret_pass = false;
     let mut psk_pass = false;
     let mut pskid_pass = false;
 
@@ -123,7 +126,7 @@ fn ps_req(stream: &mut TcpStream) -> Result<(KemAlg, KdfAlg, AeadAlg, Vec<u8>, V
        
         // => KEM
         if id == codes::KEM {
-            println!("=> Server-selected KEM arrived");
+            println!("=> KEM arrived");
             let mut tmp = vec![];
             handle_data_u16(&stream, &mut tmp, &data)?;
             if tmp[0] == agility::KemAlg::X25519HkdfSha256.to_u16() {
@@ -136,7 +139,7 @@ fn ps_req(stream: &mut TcpStream) -> Result<(KemAlg, KdfAlg, AeadAlg, Vec<u8>, V
                 panic!("No KEM compatible algorithm\n")
             }
         } else if id == codes::KDF {
-            println!("=> Server-selected KDF arrived");
+            println!("=> KDF arrived");
             let mut tmp = vec![];
             handle_data_u16(&stream, &mut tmp, &data)?;
             if tmp[0] == agility::KdfAlg::HkdfSha256.to_u16() {
@@ -152,7 +155,7 @@ fn ps_req(stream: &mut TcpStream) -> Result<(KemAlg, KdfAlg, AeadAlg, Vec<u8>, V
                 panic!("No KDF compatible algorithm")
             }
         } else if id == codes::AEAD {
-            println!("=> Server-selected AEAD arrived");
+            println!("=> AEAD arrived");
             let mut tmp = vec![];
             handle_data_u16(&stream, &mut tmp, &data)?;
             if tmp[0] == agility::AeadAlg::AesGcm128.to_u16() {
@@ -167,10 +170,10 @@ fn ps_req(stream: &mut TcpStream) -> Result<(KemAlg, KdfAlg, AeadAlg, Vec<u8>, V
             } else {
                 panic!("No AEAD compatible algorithm")
             }
-        } else if id == codes::ENCKEY {
-            println!("=> Encryption key arrived");
-            handle_data_u8(stream, &mut enc, &data)?;  
-            enc_pass = true;
+        } else if id == codes::SHSEC {
+            println!("=> SSK arrived");
+            handle_data_u8(stream, &mut secret, &data)?;  
+            secret_pass = true;
         } else if id == codes::PSK {
             println!("=>PSK arrived");
             handle_data_u8(stream, &mut psk, &data)?;  
@@ -180,12 +183,42 @@ fn ps_req(stream: &mut TcpStream) -> Result<(KemAlg, KdfAlg, AeadAlg, Vec<u8>, V
             handle_data_u8(stream, &mut pskid, &data)?;  
             pskid_pass = true;
         }
-        if kem_pass && kdf_pass && aead_pass && enc_pass && psk_pass && pskid_pass {
-            println!("=>fff\n");
-            return Ok((kem, kdf, aead, enc, psk, pskid));  
+        if kem_pass && kdf_pass && aead_pass && secret_pass && psk_pass && pskid_pass {
+            return Ok((kem, kdf, aead, secret, psk, pskid));  
         }
     }
+}
 
+fn client_exchange_mex(mut stream: &TcpStream, mut ctx: Strobe) -> Result<(), Error> {
+    let mut ct:Vec<u8> = vec![]; 
+    let mut ct_pass = false;
+    let mut data = [0 as u8; 100]; 
+
+    loop {
+
+        let bytes_read = stream.read(&mut data)?;
+        if bytes_read == 0 { return Ok(()); }
+        let id = data[data_pack_manager::ID_POS_HEADER];
+        
+        if id == codes::CIPHERTEXT {
+            println!("=> Ciphertext arrived");
+            handle_data_u8(stream, &mut ct, &data)?;
+            ct_pass = true;
+        } else {
+            panic!("client_exchange_mex :: wrong input");
+        }
+
+        if ct_pass {
+            let mut plaintext = ct.clone();
+
+            ctx.recv_enc(&mut plaintext.as_mut_slice(), false);
+
+            let msg = String::from_utf8_lossy(&plaintext);
+            println!("=> Plaintext: {}", msg);
+            ct.clear();
+            ct_pass = false;
+        }
+    }
 }
 
 fn main() {
@@ -196,20 +229,164 @@ fn main() {
     let kem;
     let kdf;
     let aead;
-    let enc;
     let psk;
     let psk_id;
+    let psk_bundle: AgilePskBundle;
+    let keypair;
+    let public_key;
+    let server_id = [2 as u8];
+    let client_id = [13 as u8];
+    let kri = b"kri";
+    let tuple5 = b"5-tuple";
+    let mut ssk;
 
     match TcpStream::connect(primary_server) {
 
         Ok(mut stream) => {
+            (kem, kdf, aead, ssk, psk, psk_id) = ps_req(&mut stream).unwrap();
 
-            (kem, kdf, aead, enc, psk, psk_id) = ps_req(&mut stream).unwrap();
-            let y = 200;
+            // Receiver key pair
+            let mut csprng = StdRng::from_entropy();
+            keypair = agility::agile_gen_keypair(kem, &mut csprng);
+            public_key = keypair.1.clone();
+
+            psk_bundle = {
+                AgilePskBundle(hpke::PskBundle {
+                    psk: &psk,
+                    psk_id: &psk_id,
+                })
+            };
         },
         Err(e) => {
             panic!("send_pack :: {}", e);
         }
+    }
 
+    let socket_ss: SocketAddr = "0.0.0.0:8890".parse().unwrap();
+    let listener = TcpListener::bind(socket_ss).expect("Could not bind");
+
+    for stream in listener.incoming() {
+
+        match stream {
+
+            Ok(mut stream) => {
+
+                println!("=> Incoming connection at port: {}\n", stream.peer_addr().unwrap());
+
+                let mut data = [0 as u8; 100]; 
+                let client_pubkey;
+
+                loop {
+                    let bytes_read = stream.read(&mut data).unwrap();
+                    if bytes_read == 0 {continue;}
+                    let id = data[data_pack_manager::ID_POS_HEADER];
+
+                    if id == codes::HELLO {
+                        let mut tmp = vec![];
+                        handle_data_u8(&stream, &mut tmp, &data).unwrap();
+                        if tmp.len() == 1 {
+                            if tmp[0] == codes::SC {
+                                //connection_type = codes::PC;
+                                println!("=> Sending public key...\n");
+                                let pk = public_key.clone();
+                                let pk = pk.pubkey_bytes;
+                                let binding = data_pack_manager::pack_as_vect(pk, codes::UTF8, codes::PUBKEY);
+                                let pk_pack = binding.as_slice();
+                                if send_pack(&mut stream, pk_pack, String::from("SS public Key")) == codes::RET_ERROR { panic!("Failed to send packet") }
+                            } else {
+                                stream.write(&codes::BREAK_CONNECTION_M).unwrap();
+                                panic!("Unexpected connection");
+                            }
+                        }
+                    } else if id == codes::PUBKEY {
+                        println!("=> SC public key arrived");
+                        let mut tmp = vec![];
+                        handle_data_u8(&stream, &mut tmp, &data).unwrap();          
+                        client_pubkey = AgilePublicKey {
+                            kem_alg: kem,
+                            pubkey_bytes: tmp,
+                        };
+                        break;
+                    }
+                }
+
+                // OpMODE
+                let op_mode_r_ty = AgileOpModeRTy::AuthPsk(client_pubkey, psk_bundle);
+                let op_mode_r = AgileOpModeR {
+                    kem_alg: kem,
+                    op_mode_ty: op_mode_r_ty,
+                };
+
+                let mut sck: [u8; 32] = [0; 32];
+                concat_kdf::derive_key_into::<sha2::Sha256>(&ssk, &client_id, &mut sck).unwrap();
+                print_buf(sck.as_slice(), String::from("sck"));
+            
+                let mut kri5tuple: [u8; 32] = [0; 32];
+                concat_kdf::derive_key_into::<sha2::Sha256>(kri, tuple5, &mut kri5tuple).unwrap();
+                print_buf(kri5tuple.as_slice(), String::from("kri5tuple"));
+            
+                let mut scsk: [u8; 32] = [0; 32];
+                concat_kdf::derive_key_into::<sha2::Sha256>(&kri5tuple, &sck, &mut scsk).unwrap();
+                print_buf(scsk.as_slice(), String::from("scsk"));
+            
+                let mut kdf_ssk_clientid: [u8; 32] = [0; 32];
+                concat_kdf::derive_key_into::<sha2::Sha256>(&ssk, &client_id, &mut kdf_ssk_clientid).unwrap();
+                print_buf(kdf_ssk_clientid.as_slice(), String::from("kdf_ssk_clientid"));
+            
+                let mut sssk: [u8; 32] = [0; 32];
+                concat_kdf::derive_key_into::<sha2::Sha256>(&kri5tuple, &kdf_ssk_clientid, &mut sssk).unwrap();
+                print_buf(sssk.as_slice(), String::from("sssk"));
+                
+
+                //(SCPMK, SCSK, SSSK) = generate_session_keys(&SSPMK, kri, tuple5, &client_id);
+
+                //let ssecret = String::from_utf8_lossy(&SSPMK);
+                //println!("oooooooooooooooooooooo {}", ssecret.to_ascii_lowercase());
+
+                // receiver context
+                let ctx = agile_setup_receiver_secondary(
+                    kem,
+                    &op_mode_r,
+                    &keypair,
+                    &scsk,
+                ).unwrap();
+
+                client_exchange_mex(&stream, ctx).unwrap();
+            }
+            Err(e) => { 
+                panic!("Failed: {}", e);
+            }
+        }
     }
 }
+
+/*
+fn generate_session_keys(SSPMK: &Vec<u8>, kri: &[u8], tuple5: &[u8], client_id: &[u8]) -> ([u8; 32], [u8; 32], [u8; 32]) {  
+    let mut SCPMK: [u8; 32] = [0; 32];
+    let mut SCSK: [u8; 32] = [0; 32];
+    let mut SSSK: [u8; 32] = [0; 32];
+    let mut tmp: [u8; 32] = [0; 32];
+    let mut tmp1: [u8; 32] = [0; 32];
+
+    println!("=> SSPMK: ");
+    display_vect(SSPMK);
+
+    concat_kdf::derive_key_into::<sha2::Sha256>(&SSPMK, &client_id, &mut SCPMK).unwrap();
+    print_buf(SCPMK.as_slice(), String::from("=> SCPMK"));
+
+    concat_kdf::derive_key_into::<sha2::Sha256>(&tuple5, &kri, &mut tmp).unwrap();
+    utils::print_buf(tmp.as_slice(), String::from("tmp"));
+
+    concat_kdf::derive_key_into::<sha2::Sha256>(&SSPMK, &client_id, &mut tmp1).unwrap();
+    utils::print_buf(tmp1.as_slice(), String::from("tmp1"));
+
+    concat_kdf::derive_key_into::<sha2::Sha256>(&SCPMK, &tmp, &mut SCSK).unwrap();
+    print_buf(SCSK.as_slice(), String::from("=> SCSK"));
+
+    concat_kdf::derive_key_into::<sha2::Sha256>(&tmp1, &tmp, &mut SSSK).unwrap();
+    print_buf(SSSK.as_slice(), String::from("=> SSSK"));
+
+    (SCPMK, SCSK, SSSK) 
+    
+}
+*/

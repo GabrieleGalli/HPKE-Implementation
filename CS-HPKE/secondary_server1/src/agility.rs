@@ -11,18 +11,18 @@
 //! people have different needs when it comes to agility, so I implore you **DO NOT COPY THIS FILE
 //! BLINDLY**. Think about what you actually need, make that instead, and make sure to write lots
 //! of runtime checks.
-
+use strobe_rs::{SecParam, Strobe};
 use hpke::{
     aead::{Aead, AeadCtxR, AeadCtxS, AeadTag, AesGcm128, AesGcm256, ChaCha20Poly1305},
     kdf::{HkdfSha256, HkdfSha384, HkdfSha512, Kdf as KdfTrait},
     kem::{DhP256HkdfSha256, Kem as KemTrait, X25519HkdfSha256},
-    setup_receiver, setup_sender, Deserializable, HpkeError, OpModeR, OpModeS, PskBundle,
+    setup_receiver, Deserializable, HpkeError, OpModeR, OpModeS, PskBundle,
     Serializable,
 };
 
-use rand::{rngs::StdRng, CryptoRng, RngCore, SeedableRng};
+use rand::{CryptoRng, RngCore};
 
-trait AgileAeadCtxS {
+pub trait AgileAeadCtxS {
     fn seal_in_place_detached(
         &mut self,
         plaintext: &mut [u8],
@@ -114,7 +114,7 @@ impl AeadAlg {
             0x01 => AeadAlg::AesGcm128,
             0x02 => AeadAlg::AesGcm256,
             0x03 => AeadAlg::ChaCha20Poly1305,
-            _ => return Err(AgileHpkeError::UnknownAlgIdent("AeadAlg", id.into())),
+            _ => return Err(AgileHpkeError::UnknownAlgIdent("AeadAlg", id)),
         };
 
         Ok(res)
@@ -150,7 +150,7 @@ impl KdfAlg {
             0x01 => KdfAlg::HkdfSha256,
             0x02 => KdfAlg::HkdfSha384,
             0x03 => KdfAlg::HkdfSha512,
-            _ => return Err(AgileHpkeError::UnknownAlgIdent("KdfAlg", id.into())),
+            _ => return Err(AgileHpkeError::UnknownAlgIdent("KdfAlg", id)),
         };
 
         Ok(res)
@@ -164,7 +164,7 @@ impl KdfAlg {
         }
     }
 
-    fn get_digest_len(&self) -> usize {
+    pub fn get_digest_len(&self) -> usize {
         match self {
             KdfAlg::HkdfSha256 => 32,
             KdfAlg::HkdfSha384 => 48,
@@ -372,9 +372,9 @@ pub enum AgileOpModeRTy<'a> {
 }
 
 #[derive(Clone)]
-struct AgileOpModeS<'a> {
-    kem_alg: KemAlg,
-    op_mode_ty: AgileOpModeSTy<'a>,
+pub struct AgileOpModeS<'a> {
+    pub kem_alg: KemAlg,
+    pub op_mode_ty: AgileOpModeSTy<'a>,
 }
 
 impl<'a> AgileOpModeS<'a> {
@@ -425,7 +425,7 @@ impl<'a> AgileOpModeS<'a> {
 }
 
 #[derive(Clone)]
-enum AgileOpModeSTy<'a> {
+pub enum AgileOpModeSTy<'a> {
     Base,
     Psk(AgilePskBundle<'a>),
     Auth(AgileKeypair),
@@ -510,91 +510,15 @@ macro_rules! hpke_dispatch {
     };
 }
 
-// The leg work of agile_setup_receiver
-fn do_setup_sender<A, Kdf, Kem, R>(
-    mode: &AgileOpModeS,
-    pk_recip: &AgilePublicKey,
-    info: &[u8],
-    csprng: &mut R,
-) -> Result<(AgileEncappedKey, Box<dyn AgileAeadCtxS>), AgileHpkeError>
-where
-    A: 'static + Aead,
-    Kdf: 'static + KdfTrait,
-    Kem: 'static + KemTrait,
-    R: CryptoRng + RngCore,
-{
-    let kem_alg = mode.kem_alg;
-    let mode = mode.clone().try_lift::<Kem, Kdf>()?;
-    let pk_recip = pk_recip.try_lift::<Kem>()?;
-
-    let (encapped_key, aead_ctx) = setup_sender::<A, Kdf, Kem, _>(&mode, &pk_recip, info, csprng)?;
-    let encapped_key = AgileEncappedKey {
-        kem_alg,
-        encapped_key_bytes: encapped_key.to_bytes().to_vec(),
-    };
-
-    Ok((encapped_key, Box::new(aead_ctx)))
-}
-
-fn agile_setup_sender<R: CryptoRng + RngCore>(
-    aead_alg: AeadAlg,
-    kdf_alg: KdfAlg,
-    kem_alg: KemAlg,
-    mode: &AgileOpModeS,
-    pk_recip: &AgilePublicKey,
-    info: &[u8],
-    csprng: &mut R,
-) -> Result<(AgileEncappedKey, Box<dyn AgileAeadCtxS>), AgileHpkeError> {
-    // Do all the necessary validation
-    mode.validate()?;
-    if mode.kem_alg != pk_recip.kem_alg {
-        return Err(AgileHpkeError::AlgMismatch(
-            (mode.kem_alg.name(), "mode::kem_alg"),
-            (pk_recip.kem_alg.name(), "pk_recip::kem_alg"),
-        ));
-    }
-    if kem_alg != mode.kem_alg {
-        return Err(AgileHpkeError::AlgMismatch(
-            (kem_alg.name(), "kem_alg::kem_alg"),
-            (mode.kem_alg.name(), "mode::kem_alg"),
-        ));
-    }
-
-    // The triple we dispatch on
-    let to_match = (aead_alg, kem_alg, kdf_alg);
-
-    // This gets overwritten by the below macro call. It's None iff dispatch failed.
-    let mut res: Option<Result<(AgileEncappedKey, Box<dyn AgileAeadCtxS>), AgileHpkeError>> = None;
-
-    #[rustfmt::skip]
-    hpke_dispatch!(
-        res, to_match,
-        (ChaCha20Poly1305, AesGcm128, AesGcm256),
-        (HkdfSha256, HkdfSha384, HkdfSha512),
-        (X25519HkdfSha256, DhP256HkdfSha256),
-        R,
-        do_setup_sender,
-            mode,
-            pk_recip,
-            info,
-            csprng
-    );
-
-    if res.is_none() {
-        panic!("DHKEM({}) isn't impelmented yet!", kem_alg.name());
-    }
-
-    res.unwrap()
-}
 
 // The leg work of agile_setup_receiver. The Dummy type parameter is so that it can be used with
 // the hpke_dispatch! macro. The macro expects its callback function to have 4 type parameters
-fn do_setup_receiver<A, Kdf, Kem, Dummy>(
+fn do_setup_receiver_primary<A, Kdf, Kem, Dummy>(
     mode: &AgileOpModeR,
     recip_keypair: &AgileKeypair,
     encapped_key: &AgileEncappedKey,
     info: &[u8],
-) -> Result<Box<dyn AgileAeadCtxR>, AgileHpkeError>
+) -> Result<Vec<u8>, AgileHpkeError>
 where
     A: 'static + Aead,
     Kdf: 'static + KdfTrait,
@@ -605,10 +529,21 @@ where
     let encapped_key = encapped_key.try_lift::<Kem>()?;
 
     let aead_ctx = setup_receiver::<A, Kdf, Kem>(&mode, &sk_recip, &encapped_key, info)?;
-    Ok(Box::new(aead_ctx))
+
+    let mut shared_secret = [0u8; 32];
+    aead_ctx.export(info, &mut shared_secret)?;
+
+    Ok(shared_secret.to_vec())
 }
 
-pub fn agile_setup_receiver(
+fn do_setup_receiver_secondary(shared_secret_key: &[u8]) -> Result<Strobe, AgileHpkeError> {
+    let mut ctx = Strobe::new(b"mysession", SecParam::B128);
+    ctx.key(&shared_secret_key, false);
+
+    Ok(ctx)
+}
+
+pub fn agile_setup_receiver_primary (
     aead_alg: AeadAlg,
     kdf_alg: KdfAlg,
     kem_alg: KemAlg,
@@ -616,7 +551,8 @@ pub fn agile_setup_receiver(
     recip_keypair: &AgileKeypair,
     encapped_key: &AgileEncappedKey,
     info: &[u8],
-) -> Result<Box<dyn AgileAeadCtxR>, AgileHpkeError> {
+) -> Result<Vec<u8>, AgileHpkeError> {
+
     // Do all the necessary validation
     recip_keypair.validate()?;
     mode.validate()?;
@@ -641,9 +577,7 @@ pub fn agile_setup_receiver(
 
     // The triple we dispatch on
     let to_match = (aead_alg, kem_alg, kdf_alg);
-
-    // This gets overwritten by the below macro call. It's None iff dispatch failed.
-    let mut res: Option<Result<Box<dyn AgileAeadCtxR>, AgileHpkeError>> = None;
+    let mut res: Option<Result<Vec<u8>, AgileHpkeError>> = None;
 
     // Dummy type to give to the macro. do_setup_receiver doesn't use an RNG, so it doesn't need a
     // concrete RNG type. We give it the unit type to make it happy.
@@ -656,7 +590,7 @@ pub fn agile_setup_receiver(
         (HkdfSha256, HkdfSha384, HkdfSha512),
         (X25519HkdfSha256, DhP256HkdfSha256),
         Unit,
-        do_setup_receiver,
+        do_setup_receiver_primary,
             mode,
             recip_keypair,
             encapped_key,
@@ -667,5 +601,32 @@ pub fn agile_setup_receiver(
         panic!("DHKEM({}) isn't impelmented yet!", kem_alg.name());
     }
 
-    res.unwrap()
+    Ok(res.unwrap().unwrap())
+}
+
+pub fn agile_setup_receiver_secondary (
+    kem_alg: KemAlg,
+    mode: &AgileOpModeR,
+    recip_keypair: &AgileKeypair,
+    secret: &[u8],
+) -> Result<Strobe, AgileHpkeError> {
+    // Do all the necessary validation
+    recip_keypair.validate()?;
+    mode.validate()?;
+    if mode.kem_alg != recip_keypair.0.kem_alg {
+        return Err(AgileHpkeError::AlgMismatch(
+            (mode.kem_alg.name(), "mode::kem_alg"),
+            (recip_keypair.0.kem_alg.name(), "recip_keypair::kem_alg"),
+        ));
+    }
+    if kem_alg != mode.kem_alg {
+        return Err(AgileHpkeError::AlgMismatch(
+            (kem_alg.name(), "kem_alg::kem_alg"),
+            (mode.kem_alg.name(), "mode::kem_alg"),
+        ));
+    }
+
+    let ctx = do_setup_receiver_secondary(secret);
+
+    Ok(ctx.unwrap())
 }

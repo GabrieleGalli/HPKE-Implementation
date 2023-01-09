@@ -11,7 +11,7 @@
 //! people have different needs when it comes to agility, so I implore you **DO NOT COPY THIS FILE
 //! BLINDLY**. Think about what you actually need, make that instead, and make sure to write lots
 //! of runtime checks.
-
+use strobe_rs::{SecParam, Strobe};
 use hpke::{
     aead::{Aead, AeadCtxR, AeadCtxS, AeadTag, AesGcm128, AesGcm256, ChaCha20Poly1305},
     kdf::{HkdfSha256, HkdfSha384, HkdfSha512, Kdf as KdfTrait},
@@ -511,12 +511,12 @@ macro_rules! hpke_dispatch {
 }
 
 // The leg work of agile_setup_receiver
-fn do_setup_sender<A, Kdf, Kem, R>(
+fn do_setup_sender_primary<A, Kdf, Kem, R>(
     mode: &AgileOpModeS,
     pk_recip: &AgilePublicKey,
     info: &[u8],
     csprng: &mut R,
-) -> Result<(AgileEncappedKey, Box<dyn AgileAeadCtxS>), AgileHpkeError>
+) -> Result<(AgileEncappedKey, Vec<u8>), AgileHpkeError>
 where
     A: 'static + Aead,
     Kdf: 'static + KdfTrait,
@@ -528,15 +528,28 @@ where
     let pk_recip = pk_recip.try_lift::<Kem>()?;
 
     let (encapped_key, aead_ctx) = setup_sender::<A, Kdf, Kem, _>(&mode, &pk_recip, info, csprng)?;
+
+    let mut shared_secret = [0u8; 32];
+    aead_ctx.export(info, &mut shared_secret)?;
+
     let encapped_key = AgileEncappedKey {
         kem_alg,
         encapped_key_bytes: encapped_key.to_bytes().to_vec(),
     };
 
-    Ok((encapped_key, Box::new(aead_ctx)))
+    Ok((encapped_key, shared_secret.to_vec()))
 }
 
-pub fn agile_setup_sender<R: CryptoRng + RngCore>(
+// The leg work of agile_setup_receiver
+fn do_setup_sender_secondary (shared_secret_key: &[u8]) -> Result<Strobe, AgileHpkeError> {
+
+    let mut ctx = Strobe::new(b"mysession", SecParam::B128);
+    ctx.key(&shared_secret_key, false);
+
+    Ok(ctx)
+}
+
+pub fn agile_setup_sender_primary<R: CryptoRng + RngCore>(
     aead_alg: AeadAlg,
     kdf_alg: KdfAlg,
     kem_alg: KemAlg,
@@ -544,7 +557,8 @@ pub fn agile_setup_sender<R: CryptoRng + RngCore>(
     pk_recip: &AgilePublicKey,
     info: &[u8],
     csprng: &mut R,
-) -> Result<(AgileEncappedKey, Box<dyn AgileAeadCtxS>), AgileHpkeError> {
+) -> Result<(AgileEncappedKey, Vec<u8>), AgileHpkeError> {
+
     // Do all the necessary validation
     mode.validate()?;
     if mode.kem_alg != pk_recip.kem_alg {
@@ -560,11 +574,8 @@ pub fn agile_setup_sender<R: CryptoRng + RngCore>(
         ));
     }
 
-    // The triple we dispatch on
     let to_match = (aead_alg, kem_alg, kdf_alg);
-
-    // This gets overwritten by the below macro call. It's None iff dispatch failed.
-    let mut res: Option<Result<(AgileEncappedKey, Box<dyn AgileAeadCtxS>), AgileHpkeError>> = None;
+    let mut res: Option<Result<(AgileEncappedKey, Vec<u8>), AgileHpkeError>> = None;
 
     #[rustfmt::skip]
     hpke_dispatch!(
@@ -573,7 +584,7 @@ pub fn agile_setup_sender<R: CryptoRng + RngCore>(
         (HkdfSha256, HkdfSha384, HkdfSha512),
         (X25519HkdfSha256, DhP256HkdfSha256),
         R,
-        do_setup_sender,
+        do_setup_sender_primary,
             mode,
             pk_recip,
             info,
@@ -584,7 +595,34 @@ pub fn agile_setup_sender<R: CryptoRng + RngCore>(
         panic!("DHKEM({}) isn't impelmented yet!", kem_alg.name());
     }
 
-    res.unwrap()
+    Ok(res.unwrap().unwrap())
+}
+
+pub fn agile_setup_sender_secondary<R: CryptoRng + RngCore>(
+    kem_alg: KemAlg,
+    mode: &AgileOpModeS,
+    pk_recip: &AgilePublicKey,
+    secret: &[u8],
+) -> Result<Strobe, AgileHpkeError> {
+    // Do all the necessary validation
+    mode.validate()?;
+    if mode.kem_alg != pk_recip.kem_alg {
+        return Err(AgileHpkeError::AlgMismatch(
+            (mode.kem_alg.name(), "mode::kem_alg"),
+            (pk_recip.kem_alg.name(), "pk_recip::kem_alg"),
+        ));
+    }
+    if kem_alg != mode.kem_alg {
+        return Err(AgileHpkeError::AlgMismatch(
+            (kem_alg.name(), "kem_alg::kem_alg"),
+            (mode.kem_alg.name(), "mode::kem_alg"),
+        ));
+    }
+
+    let ctx = do_setup_sender_secondary(secret);
+
+    Ok(ctx.unwrap())
+
 }
 
 // The leg work of agile_setup_receiver. The Dummy type parameter is so that it can be used with

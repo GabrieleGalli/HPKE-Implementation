@@ -471,8 +471,8 @@ fn main() {
                 }
 
                 if connection_type == codes::SS {    
-                    println!("=> Sending data to SS")          
-                                     ;
+                    println!("=> Sending data to SS");
+                    
                     // => KEM
                     let kem =  _kem.to_u16();
                     let v_kem = utils::u16_to_vec_be(kem);
@@ -495,14 +495,15 @@ fn main() {
                     if send_pack(&mut stream, aead_pack, String::from("AEAD algorithm")) == codes::RET_ERROR { panic!("Failed to send packet") }
 
                     // => Shared Secret - SSK
-                    let Km = _shared_secret.clone();
-                      // supporre di conoscere gli id di client e server e il pair_id
-                      let server_id = [2 as u8];
-                      let client_id = [13 as u8];
+
+                    let km = _shared_secret.clone();
+                      // suppose of knowing Cliend_ID, Server_ID, Pair_ID
+                      let _server_id = [2 as u8];
+                      let _client_id = [13 as u8];
                       let pair_id = [1 as u8];
 
                       let mut ssk: [u8; 32] = [0; 32];
-                      concat_kdf::derive_key_into::<sha2::Sha256>(&Km, &pair_id, &mut ssk).unwrap();
+                      concat_kdf::derive_key_into::<sha2::Sha256>(&km, &pair_id, &mut ssk).unwrap();
                       utils::print_buf(ssk.as_slice(), String::from("SSK"));
 
                     let binding = data_pack_manager::pack_as_vect(ssk.to_vec(), codes::UTF8, codes::SHSEC);

@@ -1,3 +1,4 @@
+
 use std::net::TcpStream;
 use std::str;
 use std::io::{self, BufRead, BufReader, Write};
@@ -6,8 +7,14 @@ use std::time::Duration;
 
 fn main() {
     let remote: SocketAddr = "127.0.0.1:8888".parse().unwrap();
-    let mut stream = TcpStream::connect_timeout(&remote, Duration::from_secs(2)).expect("Could not connect to server");
+
+    let mut stream = TcpStream::connect_timeout(
+        &remote,
+        Duration::from_secs(2)
+    ).expect("Could not connect to server");
+
     stream.set_read_timeout(Some(Duration::from_secs(3))).expect("Could not set a read timeout");
+
     loop {
         let mut input = String::new();
         let mut buffer: Vec<u8> = Vec::new();
@@ -20,3 +27,4 @@ fn main() {
         print!("{}", str::from_utf8(&buffer).expect("Could not write buffer as string"));
     }
 }
+

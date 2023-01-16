@@ -216,13 +216,16 @@ fn main() {
     let keypair;
     let public_key;
     let mut csprng = StdRng::from_entropy();
+
     let server_id = [2 as u8];
     let client_id = [13 as u8];
+    
     let kri = b"kri";
     let tuple5 = b"5-tuple";
+    
     let sck;
-    let mut SCSK: [u8; 32] = [0; 32];
-    let mut SSSK: [u8; 32] = [0; 32];
+    let mut scsk: [u8; 32] = [0; 32];
+    let mut sssk: [u8; 32] = [0; 32];
 
     let mut remote: SocketAddr = "127.0.0.1:8889".parse().unwrap();
     match TcpStream::connect(remote) {
@@ -298,24 +301,8 @@ fn main() {
             println!("=> SCK: ");
             utils::display_vect(&sck);
 
-            let mut kri5tuple: [u8; 32] = [0; 32];
-            concat_kdf::derive_key_into::<sha2::Sha256>(kri, tuple5, &mut kri5tuple).unwrap();
-            utils::print_buf(kri5tuple.as_slice(), String::from("kri5tuple"));
-        
-            let mut scsk: [u8; 32] = [0; 32];
-            concat_kdf::derive_key_into::<sha2::Sha256>(&kri5tuple, &sck, &mut scsk).unwrap();
-            utils::print_buf(scsk.as_slice(), String::from("scsk"));
-        
-            let mut sssk: [u8; 32] = [0; 32];
-            concat_kdf::derive_key_into::<sha2::Sha256>(&kri5tuple, &sck, &mut sssk).unwrap();
-            utils::print_buf(sssk.as_slice(), String::from("sssk"));
+            (scsk, sssk) = generate_session_keys(&sck, kri, tuple5);
             
-
-            //(SCSK, SSSK) = generate_session_keys(&SCPMK, &kri, &tuple5, &server_id);
-            
-            //let ssecret = String::from_utf8_lossy(&SCPMK);
-            //println!("oooooooooooooooooooooo {}", ssecret.to_ascii_lowercase());
-
             let ctx = agile_setup_sender_secondary(
                 kem,
                 &op_mode_s,
@@ -332,9 +319,19 @@ fn main() {
         },
     }
 }
-/*
-fn generate_session_keys(SCPMK: &Vec<u8>, kri: &[u8], tuple5: &[u8], server_id: &[u8]) -> ([u8; 32], [u8; 32]) {    
-    
-    (SCSK, SSSK) 
+
+fn generate_session_keys(sck: &Vec<u8>, kri: &[u8], tuple5: &[u8]) -> ([u8; 32], [u8; 32]) {    
+    let mut kri5tuple: [u8; 32] = [0; 32];
+    concat_kdf::derive_key_into::<sha2::Sha256>(kri, tuple5, &mut kri5tuple).unwrap();
+    utils::print_buf(kri5tuple.as_slice(), String::from("kri5tuple"));
+
+    let mut scsk: [u8; 32] = [0; 32];
+    concat_kdf::derive_key_into::<sha2::Sha256>(&kri5tuple, &sck, &mut scsk).unwrap();
+    utils::print_buf(scsk.as_slice(), String::from("scsk"));
+
+    let mut sssk: [u8; 32] = [0; 32];
+    concat_kdf::derive_key_into::<sha2::Sha256>(&kri5tuple, &sck, &mut sssk).unwrap();
+    utils::print_buf(sssk.as_slice(), String::from("sssk"));
+
+    (scsk, sssk) 
 }
-*/

@@ -442,14 +442,15 @@ fn main() {
                     if send_pack(&mut stream, aead_pack, String::from("AEAD algorithm")) == codes::RET_ERROR { panic!("Failed to send packet") }
 
                     // => Shared Secret - SCK
-                    let Km = _shared_secret.clone();
-                      // supporre di conoscere gli id di client e server e il pair_id
-                      let server_id = [2 as u8];
+
+                    let km = _shared_secret.clone();
+                      // suppose of knowing Cliend_ID, Server_ID, Pair_ID
+                      let _server_id = [2 as u8];
                       let client_id = [13 as u8];
                       let pair_id = [1 as u8];
 
                       let mut kdf_km_pairid: [u8; 32] = [0; 32];
-                      concat_kdf::derive_key_into::<sha2::Sha256>(&Km, &pair_id, &mut kdf_km_pairid).unwrap();
+                      concat_kdf::derive_key_into::<sha2::Sha256>(&km, &pair_id, &mut kdf_km_pairid).unwrap();
                       utils::print_buf(kdf_km_pairid.as_slice(), String::from("km_pairid"));
                   
                       let mut sck: [u8; 32] = [0; 32];

@@ -60,9 +60,14 @@ fn send_ciphersuite_s(stream: &mut TcpStream, supported_kem: &[KemAlg], supporte
             v_kem.push(k);
         }
     }
-    let binding = data_pack_manager::pack_as_vect(v_kem, codes::UTF16, codes::KEM);
+    let binding = data_pack_manager::pack_as_vect(
+        v_kem,
+        codes::UTF16,
+        codes::KEM
+    );
     let kem_pack = binding.as_slice();
-    if send_pack(stream, kem_pack, String::from("KEM algorithms")) == codes::RET_ERROR { panic!("Failed to send packet") }
+    if send_pack(stream, kem_pack, String::from("KEM algorithms")) 
+        == codes::RET_ERROR { panic!("Failed to send packet") }
 
     // => KDF
     for a in supported_kdf {

@@ -1,0 +1,2 @@
+cargo:rustc-env=TYPENUM_BUILD_CONSTS=D:\School\UniFi - Computer Engineering\Tesi\HPKE-Implementation\CS-HPKE\server\target\debug\build\typenum-af3338eeec26f410\out\consts.rs
+cargo:rustc-env=TYPENUM_BUILD_OP=D:\School\UniFi - Computer Engineering\Tesi\HPKE-Implementation\CS-HPKE\server\target\debug\build\typenum-af3338eeec26f410\out\op.rs

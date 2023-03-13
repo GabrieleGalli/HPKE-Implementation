@@ -235,7 +235,9 @@ pub struct AgilePublicKey {
 
 impl AgilePublicKey {
     pub fn try_lift<Kem: KemTrait>(&self) -> Result<Kem::PublicKey, AgileHpkeError> {
-        Kem::PublicKey::from_bytes(&self.pubkey_bytes).map_err(|e| e.into())
+        Kem::PublicKey::from_bytes(
+            &self.pubkey_bytes
+        ).map_err(|e| e.into())
     }
 }
 
@@ -328,7 +330,6 @@ impl<'a> AgileOpModeR<'a> {
                 OpModeR::AuthPsk(pk.try_lift::<Kem>()?, bundle.try_lift::<Kdf>()?)
             }
         };
-
         Ok(res)
     }
 
@@ -358,7 +359,6 @@ impl<'a> AgileOpModeR<'a> {
             }
             _ => (),
         }
-
         Ok(())
     }
 }

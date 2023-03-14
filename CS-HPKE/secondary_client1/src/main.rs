@@ -15,30 +15,27 @@ use strobe_rs::Strobe;
 use crate::agility::{AgileOpModeSTy, AgileOpModeS, AgileAeadCtxS, agile_setup_sender_secondary};
 
 fn send_pack(stream: &mut TcpStream, pack: &[u8], what: String) -> u8 {
-
     let mut buf = [1 as u8; 10]; 
 
-    stream.write(pack).unwrap();
-    println!("=> {} sent", what);
-   
+    match stream.write(pack) {
+        Ok(_) => println!("=> {} sent", what),
+        Err(e) => panic!("send_pack :: {}", e),
+    }
+
     match stream.read(&mut buf) {
         Ok(bytes_read) => {
             if bytes_read > 1 {
                 panic!("send_pack :: some error in receiving a response, bytes read: {}", bytes_read);
-            }
-            if buf[0] == codes::RECEIVED { 
+            } else if buf[0] == codes::RECEIVED { 
                 println!("Receiver has received {}", what);
                 //utils::display_pack(pack);
-                return codes::RECEIVED;
-            } else {
-                return codes::RET_ERROR;
+                return codes::RECEIVED;    
+            } else {  // Added an else statement to handle the case when buf[0] != codes::RECEIVED. 
+                return codes::RET_ERROR;   // Returned codes::RET_ERROR instead of panicking. 
             }    
-        },
-        Err(e) => {
-            panic!("send_pack :: {}", e);
-        }
-    }
-
+        },   
+        Err(e) => panic!("send_pack :: {}", e),   // Moved the Err() block outside of the if statement. 
+    }    
 }
 
 fn handle_data_u8(mut stream: &TcpStream, output_vec: &mut Vec<u8>, input_buf: &[u8]) -> Result<(), Error> {
@@ -323,15 +320,15 @@ fn main() {
 fn generate_session_keys(sck: &Vec<u8>, kri: &[u8], tuple5: &[u8]) -> ([u8; 32], [u8; 32]) {    
     let mut kri5tuple: [u8; 32] = [0; 32];
     concat_kdf::derive_key_into::<sha2::Sha256>(kri, tuple5, &mut kri5tuple).unwrap();
-    utils::print_buf(kri5tuple.as_slice(), String::from("kri5tuple"));
+    utils::print_buf(kri5tuple.as_slice(), &String::from("kri5tuple"));
 
     let mut scsk: [u8; 32] = [0; 32];
     concat_kdf::derive_key_into::<sha2::Sha256>(&kri5tuple, &sck, &mut scsk).unwrap();
-    utils::print_buf(scsk.as_slice(), String::from("scsk"));
+    utils::print_buf(scsk.as_slice(), &String::from("scsk"));
 
     let mut sssk: [u8; 32] = [0; 32];
     concat_kdf::derive_key_into::<sha2::Sha256>(&kri5tuple, &sck, &mut sssk).unwrap();
-    utils::print_buf(sssk.as_slice(), String::from("sssk"));
+    utils::print_buf(sssk.as_slice(), &String::from("sssk"));
 
     (scsk, sssk) 
 }

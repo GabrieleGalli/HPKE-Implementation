@@ -17,30 +17,28 @@ use agility::{ KemAlg, KdfAlg, AeadAlg, AgilePublicKey, AgilePskBundle, AgileOpM
 
 use crate::agility::agile_setup_receiver_primary;
 
-fn send_pack(stream:&mut TcpStream, pack: &[u8], what: String) -> u8 {
-    
+fn send_pack(stream: &mut TcpStream, pack: &[u8], what: String) -> u8 {
     let mut buf = [1 as u8; 10]; 
 
-    stream.write(pack).unwrap();
-    println!("=> {} sent", what);
+    match stream.write(pack) {
+        Ok(_) => println!("=> {} sent", what),
+        Err(e) => panic!("send_pack :: {}", e),
+    }
 
     match stream.read(&mut buf) {
         Ok(bytes_read) => {
             if bytes_read > 1 {
                 panic!("send_pack :: some error in receiving a response, bytes read: {}", bytes_read);
-            }
-            if buf[0] == codes::RECEIVED { 
+            } else if buf[0] == codes::RECEIVED { 
                 println!("Receiver has received {}", what);
                 //utils::display_pack(pack);
-                return codes::RECEIVED;
-            } else {
-                return codes::RET_ERROR;
-            }
-        },
-        Err(e) => {
-            panic!("send_pack :: {}", e);
-        }
-    }
+                return codes::RECEIVED;    
+            } else {  // Added an else statement to handle the case when buf[0] != codes::RECEIVED. 
+                return codes::RET_ERROR;   // Returned codes::RET_ERROR instead of panicking. 
+            }    
+        },   
+        Err(e) => panic!("send_pack :: {}", e),   // Moved the Err() block outside of the if statement. 
+    }    
 }
 
 fn handle_data_u8(mut stream: &TcpStream, output_vec: &mut Vec<u8>, input_buf: &[u8]) -> Result<(), Error> {
@@ -199,7 +197,7 @@ fn choose_algorithms(
         _found_common_chipersuite = true;
     } else {
         stream.write(&codes::BREAK_CONNECTION_M).unwrap();
-        panic!("choose_algorithms :: Insufficient common algorithms");
+        return Err(Error::new(std::io::ErrorKind::Other, "choose_algorithms :: Insufficient common algorithms"));
     }
 
     return Ok((choosen_kem, choosen_kdf, choosen_aead, _found_common_chipersuite));
@@ -244,19 +242,20 @@ fn send_algorithms_pubkey_r(stream: &mut TcpStream, kem: KemAlg, kdf: KdfAlg, ae
 fn receive_pskid(mut stream: &TcpStream) -> Result<u8, Error> {
     let mut data = [0 as u8; 100];
     let mut out: Vec<u8> = vec![];
-    loop {
-        let bytes_read = stream.read(&mut data)?;
-        if bytes_read == 0 { continue; }
-        let id = data[data_pack_manager::ID_POS_HEADER];
 
-        if id == codes::PSK_ID {
-            println!("=> PSK_ID arrived");
-            handle_data_u8(stream, &mut out, &data)?;
-            if out.len() == 1 {
-                return Ok(out[0]);
-            }      
-        }
+    let bytes_read = stream.read(&mut data)?;
+    if bytes_read == 0 { return Err(Error::new(std::io::ErrorKind::Other, "No bytes read")); }
+
+    let id = data[data_pack_manager::ID_POS_HEADER];
+
+    if id == codes::PSK_ID {
+        println!("=> PSK_ID arrived");
+        handle_data_u8(stream, &mut out, &data)?;
+        if out.len() == 1 {
+            return Ok(out[0]);
+        }      
     }
+    Err(Error::new(std::io::ErrorKind::Other, "No PSK ID found"))
 }
 
 fn receive_enc_pubkey(mut stream: &TcpStream, kem: &KemAlg) -> Result<(Vec<u8>, AgilePublicKey), Error> {
@@ -504,7 +503,7 @@ fn main() {
 
                       let mut ssk: [u8; 32] = [0; 32];
                       concat_kdf::derive_key_into::<sha2::Sha256>(&km, &pair_id, &mut ssk).unwrap();
-                      utils::print_buf(ssk.as_slice(), String::from("SSK"));
+                      utils::print_buf(ssk.as_slice(), &String::from("SSK"));
 
                     let binding = data_pack_manager::pack_as_vect(ssk.to_vec(), codes::UTF8, codes::SHSEC);
                     let shse_pack = binding.as_slice();

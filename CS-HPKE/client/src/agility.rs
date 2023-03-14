@@ -45,11 +45,11 @@ type AgileAeadTag = Vec<u8>;
 
 #[derive(Debug)]
 pub enum AgileHpkeError {
-    /// When you don't give an algorithm an array of the length it wants. Error is of the form
-    /// `((alg1, alg1_location) , (alg2, alg2_location))`.
+    /// When you don't give an algorithm an array of the length it wants. 
+    /// Error is of the form `((alg1, alg1_location) , (alg2, alg2_location))`.
     AlgMismatch((&'static str, &'static str), (&'static str, &'static str)),
-    /// When you get an algorithm identifier you don't recognize. Error is of the form
-    /// `(alg, given_id)`.
+    /// When you get an algorithm identifier you don't recognize. 
+    /// Error is of the form `(alg, given_id)`.
     UnknownAlgIdent(&'static str, u16),
     /// Represents an error in the `hpke` crate
     HpkeError(HpkeError),

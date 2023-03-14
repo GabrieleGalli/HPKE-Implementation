@@ -16,30 +16,27 @@ use agility::{ KemAlg, KdfAlg, AeadAlg, AgilePublicKey, AgileEncappedKey };
 use crate::agility::{AgileOpModeSTy, AgileOpModeS, AgilePskBundle, AgileAeadCtxS, agile_setup_sender_primary};
 
 fn send_pack(stream: &mut TcpStream, pack: &[u8], what: String) -> u8 {
-
     let mut buf = [1 as u8; 10]; 
 
-    stream.write(pack).unwrap();
-    println!("=> {} sent", what);
-   
+    match stream.write(pack) {
+        Ok(_) => println!("=> {} sent", what),
+        Err(e) => panic!("send_pack :: {}", e),
+    }
+
     match stream.read(&mut buf) {
         Ok(bytes_read) => {
             if bytes_read > 1 {
                 panic!("send_pack :: some error in receiving a response, bytes read: {}", bytes_read);
-            }
-            if buf[0] == codes::RECEIVED { 
+            } else if buf[0] == codes::RECEIVED { 
                 println!("Receiver has received {}", what);
                 //utils::display_pack(pack);
-                return codes::RECEIVED;
-            } else {
-                return codes::RET_ERROR;
+                return codes::RECEIVED;    
+            } else {  // Added an else statement to handle the case when buf[0] != codes::RECEIVED. 
+                return codes::RET_ERROR;   // Returned codes::RET_ERROR instead of panicking. 
             }    
-        },
-        Err(e) => {
-            panic!("send_pack :: {}", e);
-        }
-    }
-
+        },   
+        Err(e) => panic!("send_pack :: {}", e),   // Moved the Err() block outside of the if statement. 
+    }    
 }
 
 fn send_ciphersuite_s(stream: &mut TcpStream, supported_kem: &[KemAlg], supported_kdf: &[KdfAlg], supported_aead: &[AeadAlg]) -> Result<(), Error> {
@@ -259,7 +256,9 @@ fn send_pskid(stream: &mut TcpStream, kdf: &KdfAlg, psk_id: u8) -> Result<Vec<u8
     println!("=> Sending pre-shared key ID to the server\n"); 
     let binding = data_pack_manager::pack_as_vect(vec![psk_id], codes::UTF8, codes::PSK_ID);
     let pskid_pack = binding.as_slice();
-    if send_pack(stream, pskid_pack, String::from("PSK ID")) == codes::RET_ERROR { panic!("Failed to send packet") }
+    if send_pack(stream, pskid_pack, String::from("PSK ID")) == codes::RET_ERROR { 
+        return Err(Error::new(io::ErrorKind::Other, "Failed to send packet"));
+    }
     Ok(psk::get_psk_from_id(psk_id, *kdf))
 }
 
@@ -282,23 +281,17 @@ fn send_enc_pubkey(stream: &mut TcpStream, enc: AgileEncappedKey, pubkey: AgileP
 
 fn server_exchange_mex(stream: &mut TcpStream, mut aead_ctx: Box<dyn AgileAeadCtxS>) {
     let aad = b"all about that paper, boy";
-    
+
     loop {
-        
         println!("\nInserisci testo");
         let mut input = String::new();
         io::stdin().read_line(&mut input).expect("Failed to read");
+
         let msg = input.as_bytes();
-        
         let ciphertext = aead_ctx.seal(msg, aad).unwrap();
 
-        let ct_pack = data_pack_manager::pack_as_vect(ciphertext, codes::UTF8, codes::CIPHERTEXT);
-        let ct = ct_pack.as_slice();
-        if send_pack(stream, ct, String::from("Ciphertext")) == codes::RET_ERROR { panic!("Failed to send packet") }
-
-        let ad_pack = data_pack_manager::pack_as_vect(aad.to_vec(), codes::UTF8, codes::ASSOCIATED_DATA);
-        let ad = ad_pack.as_slice();
-        if send_pack(stream, ad, String::from("AssociatedData")) == codes::RET_ERROR { panic!("Failed to send packet") }      
+        if send_pack(stream, &ciphertext, String::from("Ciphertext")) == codes::RET_ERROR { panic!("Failed to send packet") }
+        if send_pack(stream, &aad.to_vec(), String::from("AssociatedData")) == codes::RET_ERROR { panic!("Failed to send packet") }      
     }
 }
 
@@ -456,11 +449,11 @@ fn main() {
 
                       let mut kdf_km_pairid: [u8; 32] = [0; 32];
                       concat_kdf::derive_key_into::<sha2::Sha256>(&km, &pair_id, &mut kdf_km_pairid).unwrap();
-                      utils::print_buf(kdf_km_pairid.as_slice(), String::from("km_pairid"));
+                      utils::print_buf(kdf_km_pairid.as_slice(), &String::from("km_pairid"));
                   
                       let mut sck: [u8; 32] = [0; 32];
                       concat_kdf::derive_key_into::<sha2::Sha256>(&kdf_km_pairid, &client_id, &mut sck).unwrap();
-                      utils::print_buf(sck.as_slice(), String::from("SCK"));
+                      utils::print_buf(sck.as_slice(), &String::from("SCK"));
 
                     let binding = data_pack_manager::pack_as_vect(sck.to_vec(), codes::UTF8, codes::SHSEC);
                     let shse_pack = binding.as_slice();
